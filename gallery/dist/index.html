@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPSTEIN FILES — Document Archive</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Playfair+Display:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400&display=swap" rel="stylesheet">
+
+    <!-- Lunr.js for search -->
+    <script src="https://unpkg.com/lunr/lunr.js"></script>
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Scanline overlay -->
+    <div class="scanlines"></div>
+
+    <!-- Noise texture -->
+    <div class="noise"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-section">
+                <div class="classification-badge">
+                    <span class="badge-text">DECLASSIFIED</span>
+                </div>
+                <h1 class="site-title">EPSTEIN FILES</h1>
+                <p class="site-subtitle">Document Image Archive — U.S. Department of Justice</p>
+            </div>
+
+            <div class="stats-bar">
+                <div class="stat">
+                    <span class="stat-value" id="total-docs">—</span>
+                    <span class="stat-label">DOCUMENTS</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="total-images">—</span>
+                    <span class="stat-label">IMAGES</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="gps-count">—</span>
+                    <span class="stat-label">WITH GPS</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Search & Filters -->
+    <div class="controls-section">
+        <div class="search-container">
+            <div class="search-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                </svg>
+            </div>
+            <input type="text" id="search-input" class="search-input" placeholder="Search document text..." autocomplete="off">
+            <div class="search-shortcut">
+                <kbd>⌘</kbd><kbd>K</kbd>
+            </div>
+        </div>
+
+        <div class="filters">
+            <button class="filter-btn active" data-filter="all">
+                <span class="filter-icon">◉</span> ALL
+            </button>
+            <button class="filter-btn" data-filter="has-gps">
+                <span class="filter-icon">◎</span> GPS DATA
+            </button>
+            <button class="filter-btn" data-filter="has-date">
+                <span class="filter-icon">◎</span> DATED
+            </button>
+            <button class="filter-btn" data-filter="has-text">
+                <span class="filter-icon">◎</span> WITH TEXT
+            </button>
+        </div>
+    </div>
+
+    <!-- Results info -->
+    <div class="results-info">
+        <span id="results-count">Loading archive...</span>
+        <div class="view-toggles">
+            <button class="view-btn active" data-view="grid" title="Grid view">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                </svg>
+            </button>
+            <button class="view-btn" data-view="list" title="List view">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="3" y="4" width="18" height="4"></rect>
+                    <rect x="3" y="10" width="18" height="4"></rect>
+                    <rect x="3" y="16" width="18" height="4"></rect>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Gallery Grid -->
+    <main class="gallery-container">
+        <div class="gallery" id="gallery">
+            <!-- Images loaded dynamically -->
+        </div>
+
+        <div class="loading-indicator" id="loading">
+            <div class="loading-spinner"></div>
+            <span>ACCESSING ARCHIVE...</span>
+        </div>
+
+        <div class="no-results" id="no-results" style="display: none;">
+            <div class="no-results-icon">∅</div>
+            <h3>NO MATCHING RECORDS</h3>
+            <p>No documents found matching your search criteria.</p>
+        </div>
+    </main>
+
+    <!-- Image Modal -->
+    <div class="modal" id="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <button class="modal-close" id="modal-close">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"></path>
+                </svg>
+            </button>
+
+            <div class="modal-layout">
+                <!-- Image viewer -->
+                <div class="modal-image-section">
+                    <div class="image-container">
+                        <img id="modal-image" src="" alt="">
+                    </div>
+                    <div class="image-nav">
+                        <button class="nav-btn" id="prev-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M15 18l-6-6 6-6"></path>
+                            </svg>
+                            PREV
+                        </button>
+                        <span class="image-counter" id="image-counter">1 / 1</span>
+                        <button class="nav-btn" id="next-btn">
+                            NEXT
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18l6-6-6-6"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Info panel -->
+                <div class="modal-info-section">
+                    <div class="info-header">
+                        <div class="doc-badge" id="modal-doc-id">EFTA00000000</div>
+                        <div class="page-badge">PAGE <span id="modal-page">1</span></div>
+                    </div>
+
+                    <div class="info-tabs">
+                        <button class="tab-btn active" data-tab="metadata">METADATA</button>
+                        <button class="tab-btn" data-tab="text">DOCUMENT TEXT</button>
+                        <button class="tab-btn" data-tab="exif">EXIF DATA</button>
+                    </div>
+
+                    <div class="tab-content active" id="tab-metadata">
+                        <div class="metadata-grid">
+                            <div class="meta-item">
+                                <span class="meta-label">FILENAME</span>
+                                <span class="meta-value" id="meta-filename">—</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">DIMENSIONS</span>
+                                <span class="meta-value" id="meta-dimensions">—</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">FILE SIZE</span>
+                                <span class="meta-value" id="meta-size">—</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">FORMAT</span>
+                                <span class="meta-value" id="meta-format">—</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">CAMERA</span>
+                                <span class="meta-value" id="meta-camera">—</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">DATE TAKEN</span>
+                                <span class="meta-value" id="meta-date">—</span>
+                            </div>
+                        </div>
+
+                        <div class="gps-section" id="gps-section" style="display: none;">
+                            <h4 class="section-title">
+                                <span class="gps-indicator"></span>
+                                GPS COORDINATES
+                            </h4>
+                            <div class="gps-data" id="gps-data"></div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-text">
+                        <div class="text-content" id="modal-text">
+                            <p class="no-text">No text extracted from this page.</p>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-exif">
+                        <div class="exif-content" id="modal-exif">
+                            <p class="no-text">No EXIF data available.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-info">
+                <span class="footer-label">ARCHIVE GENERATED</span>
+                <span class="footer-value" id="generated-date">—</span>
+            </div>
+            <div class="footer-divider"></div>
+            <div class="footer-info">
+                <span class="footer-label">SOURCE</span>
+                <span class="footer-value">justice.gov/epstein</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
