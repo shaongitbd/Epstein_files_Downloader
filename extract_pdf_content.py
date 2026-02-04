@@ -246,6 +246,20 @@ def extract_text_from_pdf(pdf_path: Path) -> dict:
         }
 
 
+def is_already_extracted(pdf_path: Path, images_dir: Path, text_dir: Path) -> bool:
+    """Check if a PDF has already been extracted"""
+    pdf_name = pdf_path.stem
+
+    # Check if text JSON exists
+    text_output_path = text_dir / f"{pdf_name}.json"
+    if not text_output_path.exists():
+        return False
+
+    # Text exists, consider it extracted
+    # (Images folder may not exist if PDF had no images, that's OK)
+    return True
+
+
 def process_single_pdf(pdf_path: Path, images_dir: Path, text_dir: Path) -> dict:
     """Process a single PDF - extract images and text"""
     pdf_name = pdf_path.stem
@@ -254,6 +268,15 @@ def process_single_pdf(pdf_path: Path, images_dir: Path, text_dir: Path) -> dict
         "filename": pdf_path.name,
         "path": str(pdf_path)
     }
+
+    # Check if already extracted
+    if is_already_extracted(pdf_path, images_dir, text_dir):
+        result["skipped"] = True
+        result["images"] = {"status": "skipped", "image_count": 0, "images": []}
+        result["text"] = {"status": "skipped", "page_count": 0, "char_count": 0}
+        return result
+
+    result["skipped"] = False
 
     # Extract images
     images_result = extract_images_from_pdf(pdf_path, images_dir)
@@ -303,7 +326,18 @@ def main():
         logger.info("No PDF files found in downloads folder")
         return
 
-    logger.info(f"Found {len(pdf_files):,} PDF files to process")
+    # Count already extracted
+    already_extracted = sum(1 for pdf in pdf_files if is_already_extracted(pdf, IMAGES_OUTPUT_DIR, TEXT_OUTPUT_DIR))
+    to_process = len(pdf_files) - already_extracted
+
+    logger.info(f"Found {len(pdf_files):,} PDF files")
+    logger.info(f"Already extracted: {already_extracted:,}")
+    logger.info(f"To process: {to_process:,}")
+
+    if to_process == 0:
+        logger.info("All files already extracted. Nothing to do.")
+        return
+
     logger.info(f"Using {MAX_WORKERS} workers")
     logger.info(f"Images output: {IMAGES_OUTPUT_DIR.absolute()}")
     logger.info(f"Text output: {TEXT_OUTPUT_DIR.absolute()}")
@@ -313,6 +347,7 @@ def main():
     total_text_chars = 0
     successful = 0
     failed = 0
+    skipped = 0
 
     # Process PDFs with progress bar
     # Using ProcessPoolExecutor for CPU-bound PDF processing
@@ -327,11 +362,13 @@ def main():
                 try:
                     result = future.result()
 
-                    if result["images"]["status"] == "success":
-                        total_images += result["images"]["image_count"]
-
-                    if result["text"]["status"] == "success":
-                        total_text_chars += result["text"]["char_count"]
+                    if result.get("skipped"):
+                        skipped += 1
+                    elif result["images"]["status"] == "success" or result["text"]["status"] == "success":
+                        if result["images"]["status"] == "success":
+                            total_images += result["images"]["image_count"]
+                        if result["text"]["status"] == "success":
+                            total_text_chars += result["text"]["char_count"]
                         successful += 1
                     else:
                         failed += 1
@@ -348,6 +385,7 @@ def main():
     logger.info("EXTRACTION COMPLETE")
     logger.info(f"{'=' * 60}")
     logger.info(f"PDFs processed: {successful:,}")
+    logger.info(f"Skipped (already extracted): {skipped:,}")
     logger.info(f"Failed: {failed:,}")
     logger.info(f"Total images extracted: {total_images:,}")
     logger.info(f"Total text characters: {total_text_chars:,}")
