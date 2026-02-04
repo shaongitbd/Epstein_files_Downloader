@@ -1,0 +1,18 @@
+# Environment variables (contains cookies)
+.env
+
+# Downloads
+downloads/
+
+# Logs and checkpoints
+*.log
+checkpoint.json
+failed_downloads.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.claude
