@@ -1,8 +1,10 @@
 # Environment variables (contains cookies)
 .env
 
-# Downloads
+# Downloads and extracted content
 downloads/
+extracted_images/
+extracted_text/
 
 # Logs and checkpoints
 *.log
