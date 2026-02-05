@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,10 +196,14 @@ func main() {
 
 	// Test request with full debug
 	fmt.Println("\n--- TEST REQUEST (with headers) ---")
-	testURL := baseURL + dataset + fmt.Sprintf("EFTA%08d.pdf", startNum)
-	fmt.Printf("Testing: %s\n", testURL)
+	testURL := buildURL(dataset, fmt.Sprintf("EFTA%08d.pdf", startNum))
+	fmt.Printf("Testing: %s\n", testURL.String())
 
-	testReq, _ := http.NewRequest("GET", testURL, nil)
+	testReq := &http.Request{
+		Method: "GET",
+		URL:    testURL,
+		Header: make(http.Header),
+	}
 	testReq.Header.Set("Cookie", fmt.Sprintf("ak_bmsc=%s; justiceGovAgeVerified=%s; QueueITAccepted-SDFrts345E-V3_usdojfiles=%s",
 		akBmsc, ageVerified, queueIT))
 	testReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -252,24 +257,30 @@ func worker(jobs <-chan int, wg *sync.WaitGroup) {
 	}
 }
 
+func buildURL(dataset, filename string) *url.URL {
+	// Build URL and preserve raw encoding
+	rawURL := baseURL + dataset + filename
+	u, _ := url.Parse(rawURL)
+	// Set RawPath to preserve %20 encoding (prevent double-encoding)
+	u.RawPath = u.Path
+	return u
+}
+
 func downloadFile(client *http.Client, num int) {
 	filename := fmt.Sprintf("EFTA%08d.pdf", num)
-	url := baseURL + dataset + filename
+	fileURL := buildURL(dataset, filename)
 	fpath := filepath.Join(outputDir, filename)
 
 	// Save for debug
 	lastMu.Lock()
-	lastURL = url
+	lastURL = fileURL.String()
 	lastFilename = filename
 	lastMu.Unlock()
 
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		atomic.AddInt64(&failed, 1)
-		if verbose {
-			fmt.Printf("[FAIL] %s - request error: %v\n", filename, err)
-		}
-		return
+	req := &http.Request{
+		Method: "GET",
+		URL:    fileURL,
+		Header: make(http.Header),
 	}
 
 	req.Header.Set("Cookie", fmt.Sprintf("ak_bmsc=%s; justiceGovAgeVerified=%s; QueueITAccepted-SDFrts345E-V3_usdojfiles=%s",
