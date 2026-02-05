@@ -3,13 +3,11 @@ package config
 import (
 	"os"
 	"strconv"
-	"strings"
 )
 
 type Config struct {
 	Port        string
 	DatabaseURL string
-	CORSOrigins []string
 }
 
 func Load() *Config {
@@ -20,36 +18,13 @@ func Load() *Config {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		// Default to archive.db in the current working directory (backend root)
 		dbURL = "./archive.db"
-	}
-
-	corsOrigins := []string{"http://localhost:3000", "http://localhost:8080"}
-	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
-		// Split comma-separated origins
-		for _, origin := range splitAndTrim(origins) {
-			if origin != "" {
-				corsOrigins = append(corsOrigins, origin)
-			}
-		}
 	}
 
 	return &Config{
 		Port:        port,
 		DatabaseURL: dbURL,
-		CORSOrigins: corsOrigins,
 	}
-}
-
-func splitAndTrim(s string) []string {
-	parts := []string{}
-	for _, p := range strings.Split(s, ",") {
-		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
-			parts = append(parts, trimmed)
-		}
-	}
-	return parts
 }
 
 func GetEnvInt(key string, defaultVal int) int {
