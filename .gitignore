@@ -12,7 +12,7 @@ gallery/dist/data.json
 gallery/dist/search_index.json
 
 # Data directory (database, tracking, mappings)
-data/
+
 
 # Logs and checkpoints
 *.log
