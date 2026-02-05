@@ -82,7 +82,7 @@ func main() {
 	flag.StringVar(&dataset, "d", "files/DataSet%201/", "Dataset path")
 	flag.IntVar(&startNum, "s", 1, "Start file number")
 	flag.IntVar(&endNum, "e", 2731783, "End file number")
-	flag.StringVar(&outputDir, "o", "downloads", "Output directory")
+	flag.StringVar(&outputDir, "o", "../downloads", "Output directory")
 	flag.IntVar(&concurrency, "c", 100, "Concurrent downloads")
 	flag.BoolVar(&verbose, "v", false, "Verbose output (show each file)")
 	flag.StringVar(&akBmsc, "ak", "", "ak_bmsc cookie value")
