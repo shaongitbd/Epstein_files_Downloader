@@ -56,10 +56,25 @@ export function HomeClient({
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Mount animation
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // "/" keyboard shortcut to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Sync search query from URL on mount
@@ -137,14 +152,13 @@ export function HomeClient({
     }
 
     searchTimeoutRef.current = setTimeout(() => {
-      // Update URL with search query
       const params = new URLSearchParams();
       if (searchQuery.trim()) {
         params.set('q', searchQuery.trim());
       }
       const newUrl = searchQuery.trim() ? `/?${params.toString()}` : '/';
       router.replace(newUrl, { scroll: false });
-      
+
       fetchImages(true, searchQuery);
     }, 300);
 
@@ -178,6 +192,12 @@ export function HomeClient({
     return () => observerRef.current?.disconnect();
   }, [hasMore, loadingMore, searchQuery, fetchImages]);
 
+  const clearFilters = () => {
+    setActiveFilter('all');
+    setSearchQuery('');
+    router.replace('/', { scroll: false });
+  };
+
   const filters: { id: FilterType; label: string; shortLabel: string; icon: React.ReactNode }[] = [
     { id: 'all', label: 'ALL FILES', shortLabel: 'ALL', icon: <Database size={14} /> },
     { id: 'has_gps', label: 'GPS DATA', shortLabel: 'GPS', icon: <MapPin size={14} /> },
@@ -199,14 +219,16 @@ export function HomeClient({
         {/* Background pattern */}
         <div className="absolute inset-0 security-stripe opacity-50" />
         <div className="absolute inset-0 bg-gradient-to-b from-zinc-900/80 via-zinc-950/90 to-zinc-950" />
+        {/* Radial spotlight */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_center,rgba(212,168,75,0.06)_0%,transparent_60%)]" />
 
         <div className="relative max-w-[1800px] mx-auto px-4 sm:px-6 py-6 sm:py-10">
           <div className={`flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 lg:gap-8 transition-all duration-1000 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             {/* Title section */}
             <div>
-              {/* Classification badge */}
+              {/* Classification badge with shimmer */}
               <div className="inline-flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 animate-fade-in-down" style={{ animationDelay: '200ms' }}>
-                <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-red-500/10 border-2 border-red-500/30">
+                <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-red-500/10 border-2 border-red-500/30 shimmer-surface">
                   <Shield size={12} className="text-red-500 sm:w-3.5 sm:h-3.5" />
                   <span className="font-mono text-[9px] sm:text-[10px] font-bold tracking-[0.2em] sm:tracking-[0.25em] text-red-500">
                     DECLASSIFIED
@@ -214,24 +236,33 @@ export function HomeClient({
                 </div>
                 <div className="h-3 sm:h-4 w-px bg-zinc-700" />
                 <span className="font-mono text-[9px] sm:text-[10px] text-zinc-600 tracking-wider">
-                  PUBLIC ARCHIVE
+                  CASE NO. 08-80736
                 </span>
               </div>
 
-              {/* Main title */}
-              <h1 className="font-serif text-3xl sm:text-5xl md:text-6xl font-semibold tracking-wide text-shadow-glow animate-fade-in-up" style={{ animationDelay: '300ms' }}>
-                <span className="text-gradient">EPSTEIN FILES</span>
-              </h1>
+              {/* Split title */}
+              <div className="animate-fade-in-up" style={{ animationDelay: '300ms' }}>
+                <h1 className="font-serif text-4xl sm:text-6xl md:text-7xl font-semibold tracking-wide text-shadow-glow">
+                  <span className="text-gradient">EPSTEIN</span>
+                </h1>
+                <h2 className="font-serif text-xl sm:text-2xl md:text-3xl font-medium tracking-[0.3em] text-zinc-400 -mt-1 sm:-mt-2">
+                  FILES
+                </h2>
+              </div>
+
+              {/* Decorative separator — diamond + lines + dots */}
+              <div className="flex items-center gap-2 mt-3 sm:mt-4 animate-fade-in-up" style={{ animationDelay: '450ms' }}>
+                <div className="w-8 sm:w-12 h-px bg-gradient-to-r from-amber-500 to-transparent" />
+                <div className="w-1.5 h-1.5 rotate-45 bg-amber-500/60" />
+                <div className="w-16 sm:w-24 h-px bg-gradient-to-r from-amber-500/40 to-transparent" />
+                <div className="w-1 h-1 rounded-full bg-amber-500/30" />
+                <div className="w-1 h-1 rounded-full bg-amber-500/15" />
+              </div>
 
               {/* Subtitle */}
-              <p className="font-mono text-[10px] sm:text-xs text-zinc-500 tracking-[0.2em] sm:tracking-[0.3em] mt-2 sm:mt-3 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
+              <p className="font-mono text-[10px] sm:text-xs text-zinc-500 tracking-[0.2em] sm:tracking-[0.3em] mt-2 sm:mt-3 animate-fade-in-up" style={{ animationDelay: '500ms' }}>
                 DOCUMENT & IMAGE ARCHIVE
               </p>
-
-              {/* Decorative line */}
-              <div className="flex items-center gap-3 mt-3 sm:mt-4 animate-fade-in-up" style={{ animationDelay: '500ms' }}>
-                <div className="w-12 sm:w-16 h-px bg-gradient-to-r from-amber-500 to-transparent" />
-              </div>
 
               {/* Info link */}
               <Link
@@ -246,29 +277,32 @@ export function HomeClient({
               </Link>
             </div>
 
-            {/* Stats section - horizontal scroll on mobile */}
+            {/* Stats section with animated counters */}
             {stats && (
               <div className="flex gap-4 sm:gap-6 md:gap-10 animate-fade-in overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible" style={{ animationDelay: '600ms' }}>
-                <StatBlock
-                  value={formatNumber(stats.total_documents)}
+                <AnimatedStatBlock
+                  target={stats.total_documents}
                   label="DOCS"
                   fullLabel="DOCUMENTS"
                   icon={<FileText size={14} />}
+                  mounted={mounted}
                 />
                 <div className="w-px h-12 sm:h-16 bg-gradient-to-b from-transparent via-zinc-700 to-transparent flex-shrink-0" />
-                <StatBlock
-                  value={formatNumber(stats.total_images)}
+                <AnimatedStatBlock
+                  target={stats.total_images}
                   label="IMGS"
                   fullLabel="IMAGES"
                   icon={<Database size={14} />}
+                  mounted={mounted}
                 />
                 <div className="w-px h-12 sm:h-16 bg-gradient-to-b from-transparent via-zinc-700 to-transparent flex-shrink-0" />
-                <StatBlock
-                  value={formatNumber(stats.images_with_gps)}
+                <AnimatedStatBlock
+                  target={stats.images_with_gps}
                   label="GPS"
                   fullLabel="GPS TAGGED"
                   icon={<MapPin size={14} />}
                   highlight
+                  mounted={mounted}
                 />
               </div>
             )}
@@ -285,21 +319,31 @@ export function HomeClient({
           {/* Search */}
           <div className="max-w-2xl mx-auto mb-3 sm:mb-5">
             <div className="relative group">
-              <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-zinc-600 transition-colors group-focus-within:text-amber-500" />
+              {/* SEARCH prefix label + divider */}
+              <div className="absolute left-0 top-0 bottom-0 flex items-center pointer-events-none">
+                <span className="font-mono text-[9px] tracking-[0.15em] text-zinc-600 pl-3 sm:pl-4 pr-2">SEARCH</span>
+                <div className="w-px h-5 bg-zinc-700/50" />
+              </div>
+              <Search className="absolute left-[72px] sm:left-[84px] top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600 transition-colors group-focus-within:text-amber-500" />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search documents..."
-                className="w-full pl-10 sm:pl-12 pr-4 sm:pr-24 py-3 sm:py-4 bg-zinc-900/50 border border-zinc-800 font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all duration-300"
+                className="w-full pl-[92px] sm:pl-[108px] pr-4 sm:pr-24 py-3 sm:py-4 bg-zinc-900/50 border border-zinc-800 font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all duration-300 search-focus-ring"
               />
-              {/* Keyboard shortcut - hidden on mobile */}
+              {/* "/" keyboard shortcut hint */}
               <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-2">
-                <kbd className="font-mono text-[10px] px-2 py-1 bg-zinc-800/50 border border-zinc-700 text-zinc-500">CMD</kbd>
-                <kbd className="font-mono text-[10px] px-2 py-1 bg-zinc-800/50 border border-zinc-700 text-zinc-500">K</kbd>
+                <kbd className="font-mono text-[10px] px-2 py-1 bg-zinc-800/50 border border-zinc-700 text-zinc-500">/</kbd>
               </div>
 
-              {/* Search glow effect */}
+              {/* Bottom glow line on focus */}
+              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500/60 to-transparent opacity-0 group-focus-within:opacity-100 transition-opacity duration-300" />
+              {/* Left border accent on focus */}
+              <div className="absolute top-0 bottom-0 left-0 w-[2px] bg-amber-500 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300" />
+
+              {/* Ambient blur behind on focus */}
               <div className="absolute inset-0 -z-10 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300">
                 <div className="absolute inset-0 bg-amber-500/5 blur-xl" />
               </div>
@@ -308,34 +352,42 @@ export function HomeClient({
 
           {/* Filters and view toggle */}
           <div className="flex items-center justify-between gap-3">
-            {/* Filters - scrollable on mobile */}
+            {/* Filters */}
             <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-1 scrollbar-hide">
               {filters.map((filter) => (
                 <button
                   key={filter.id}
                   onClick={() => setActiveFilter(filter.id)}
-                  className={`group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 font-mono text-[10px] sm:text-[11px] tracking-wider border transition-all duration-300 whitespace-nowrap flex-shrink-0 ${
+                  className={`group relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 font-mono text-[10px] sm:text-[11px] tracking-wider border transition-all duration-300 whitespace-nowrap flex-shrink-0 ${
                     activeFilter === filter.id
-                      ? 'bg-amber-500/10 border-amber-500/50 text-amber-500'
+                      ? 'bg-amber-500/10 border-amber-500/50 text-amber-500 shadow-[0_0_15px_-5px_rgba(212,168,75,0.3)]'
                       : 'bg-zinc-900/30 border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300 hover:bg-zinc-900/50'
-                  }`}
+                  } ${activeFilter === filter.id ? 'shimmer-surface' : ''}`}
                 >
+                  {/* Active indicator dot — top right */}
+                  {activeFilter === filter.id && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                  )}
                   <span className={`transition-colors ${activeFilter === filter.id ? 'text-amber-500' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
                     {filter.icon}
                   </span>
                   <span className="hidden sm:inline">{filter.label}</span>
                   <span className="sm:hidden">{filter.shortLabel}</span>
+                  {/* Bottom accent underline */}
+                  {activeFilter === filter.id && (
+                    <span className="absolute bottom-0 left-1 right-1 h-[2px] bg-amber-500 animate-tab-underline" />
+                  )}
                 </button>
               ))}
             </div>
 
             <div className="flex items-center gap-2 sm:gap-5 flex-shrink-0">
-              {/* Count indicator - compact on mobile */}
+              {/* Count indicator */}
               <div className="hidden md:flex items-center gap-2 font-mono text-xs">
                 <span className="text-zinc-600">SHOWING</span>
-                <span className="text-amber-500 font-semibold">{formatNumber(images.length)}</span>
+                <span className="text-amber-500 font-semibold font-display">{formatNumber(images.length)}</span>
                 <span className="text-zinc-600">OF</span>
-                <span className="text-zinc-400">{formatNumber(total)}</span>
+                <span className="text-zinc-400 font-display">{formatNumber(total)}</span>
               </div>
 
               {/* Mobile count */}
@@ -345,27 +397,34 @@ export function HomeClient({
                 <span>{formatNumber(total)}</span>
               </div>
 
-              {/* View toggle */}
+              {/* View toggle with divider */}
               <div className="flex border border-zinc-800 bg-zinc-900/30">
                 <button
                   onClick={() => setViewType('grid')}
-                  className={`p-2 sm:p-2.5 transition-all duration-200 ${
+                  className={`relative p-2 sm:p-2.5 transition-all duration-200 ${
                     viewType === 'grid'
                       ? 'bg-amber-500/10 text-amber-500'
                       : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
                   }`}
                 >
                   <Grid size={14} className="sm:w-4 sm:h-4" />
+                  {viewType === 'grid' && (
+                    <span className="absolute bottom-0 left-1 right-1 h-[2px] bg-amber-500" />
+                  )}
                 </button>
+                <div className="w-px bg-zinc-800" />
                 <button
                   onClick={() => setViewType('list')}
-                  className={`p-2 sm:p-2.5 transition-all duration-200 ${
+                  className={`relative p-2 sm:p-2.5 transition-all duration-200 ${
                     viewType === 'list'
                       ? 'bg-amber-500/10 text-amber-500'
                       : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
                   }`}
                 >
                   <List size={14} className="sm:w-4 sm:h-4" />
+                  {viewType === 'list' && (
+                    <span className="absolute bottom-0 left-1 right-1 h-[2px] bg-amber-500" />
+                  )}
                 </button>
               </div>
             </div>
@@ -387,27 +446,31 @@ export function HomeClient({
           </div>
         )}
 
+        {/* Loading state — double-ring spinner */}
         {isLoading && !error && (
           <div className="flex flex-col items-center justify-center py-16 sm:py-24 gap-4 sm:gap-6 animate-fade-in">
             <div className="relative">
-              <div className="w-12 h-12 sm:w-16 sm:h-16 border-2 border-zinc-800 border-t-amber-500 rounded-full animate-spin" />
+              {/* Outer static ring */}
+              <div className="w-16 h-16 sm:w-20 sm:h-20 border-2 border-zinc-800 rounded-full" />
+              {/* Inner spinning ring */}
+              <div className="absolute inset-1 border-2 border-zinc-800 border-t-amber-500 rounded-full animate-spin" />
+              {/* Center icon */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <Database size={16} className="text-amber-500/50 sm:w-5 sm:h-5" />
+                <Database size={18} className="text-amber-500/60 sm:w-5 sm:h-5" />
               </div>
             </div>
             <div className="text-center">
               <span className="font-mono text-xs sm:text-sm text-zinc-400 tracking-widest">
                 ACCESSING ARCHIVE
               </span>
-              <div className="flex items-center justify-center gap-1 mt-2">
-                <span className="w-1 h-1 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1 h-1 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
+              <p className="font-mono text-[10px] text-zinc-600 mt-1.5 animate-flicker">
+                DECRYPTING FILES...
+              </p>
             </div>
           </div>
         )}
 
+        {/* Empty state with CLEAR FILTERS */}
         {!isLoading && !error && images.length === 0 && (
           <div className="text-center py-16 sm:py-24 animate-fade-in">
             <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 sm:mb-6 border-2 border-dashed border-zinc-800 rounded-full flex items-center justify-center">
@@ -416,9 +479,17 @@ export function HomeClient({
             <h3 className="font-mono text-xs sm:text-sm text-zinc-400 tracking-wider mb-2">
               NO MATCHING RECORDS
             </h3>
-            <p className="text-zinc-600 text-xs sm:text-sm max-w-md mx-auto px-4">
+            <p className="text-zinc-600 text-xs sm:text-sm max-w-md mx-auto px-4 mb-6">
               No documents found matching your search criteria. Try adjusting your filters or search terms.
             </p>
+            {(activeFilter !== 'all' || searchQuery.trim()) && (
+              <button
+                onClick={clearFilters}
+                className="inline-flex items-center gap-2 px-5 py-2.5 font-mono text-[11px] tracking-wider text-amber-500 border border-amber-500/50 hover:bg-amber-500/10 transition-all duration-300"
+              >
+                CLEAR FILTERS
+              </button>
+            )}
           </div>
         )}
 
@@ -463,8 +534,11 @@ export function HomeClient({
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-800/50 bg-zinc-950">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <footer className="relative border-t border-zinc-800/50 bg-zinc-950 overflow-hidden">
+        {/* Security stripe background */}
+        <div className="absolute inset-0 security-stripe opacity-40" />
+
+        <div className="relative max-w-[1800px] mx-auto px-4 sm:px-6 py-6 sm:py-8">
           {/* Main footer content */}
           <div className="flex flex-col items-center gap-4 sm:gap-6 mb-4 sm:mb-6 text-center">
             <div>
@@ -477,17 +551,25 @@ export function HomeClient({
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 font-mono text-[10px] sm:text-[11px] text-zinc-600">
               <span className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                DATA SOURCE: justice.gov/epstein
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                ARCHIVE ONLINE
               </span>
+              <span className="text-zinc-700">|</span>
+              <span>DATA SOURCE: justice.gov/epstein</span>
               <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-500">
                 v1.0
               </span>
             </div>
           </div>
 
+          {/* HR amber divider */}
+          <div className="hr-amber mb-4 sm:mb-6" />
+
           {/* Branding */}
-          <div className="pt-4 sm:pt-6 border-t border-zinc-800/50 flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
               <span className="font-mono text-[10px] sm:text-[11px] text-zinc-600">Developed by</span>
               <a
@@ -513,23 +595,53 @@ export function HomeClient({
   );
 }
 
-function StatBlock({
-  value,
+/* ─── Animated Stat Counter ─────────────────────────────────────── */
+
+function AnimatedStatBlock({
+  target,
   label,
   fullLabel,
   icon,
   highlight = false,
+  mounted,
 }: {
-  value: string;
+  target: number;
   label: string;
   fullLabel: string;
   icon: React.ReactNode;
   highlight?: boolean;
+  mounted: boolean;
 }) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const duration = 1500; // 1.5s
+    const steps = 60;
+    const stepTime = duration / steps;
+    let step = 0;
+
+    const timer = setInterval(() => {
+      step++;
+      // Ease-out cubic: 1 - (1-t)^3
+      const t = step / steps;
+      const easedT = 1 - Math.pow(1 - t, 3);
+      setCount(Math.round(easedT * target));
+
+      if (step >= steps) {
+        clearInterval(timer);
+        setCount(target);
+      }
+    }, stepTime);
+
+    return () => clearInterval(timer);
+  }, [mounted, target]);
+
   return (
     <div className="text-right flex-shrink-0">
-      <div className={`font-mono text-xl sm:text-3xl font-medium tracking-tight ${highlight ? 'text-emerald-400' : 'text-amber-500'}`}>
-        {value}
+      <div className={`font-display text-xl sm:text-3xl font-semibold tracking-tight ${highlight ? 'text-emerald-400' : 'text-amber-500'} ${mounted ? 'animate-counter-roll' : ''}`}>
+        {formatNumber(count)}
       </div>
       <div className="flex items-center justify-end gap-1.5 sm:gap-2 mt-0.5 sm:mt-1">
         <span className="text-zinc-600">{icon}</span>
