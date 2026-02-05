@@ -32,14 +32,28 @@ Edit `.env` with your credentials:
 - DOJ cookies (for downloading)
 - BunnyCDN credentials (for image hosting)
 
-### 2. Download & Extract PDFs
+### 2. Download PDFs
+
+**Option A: Go Downloader (Recommended - Fast)**
 
 ```bash
-python download_epstein_files.py
+cd downloader
+./downloader.exe -d "files/DataSet 2/" -s 3159 -e 3857
+```
+
+**Option B: Python Downloader**
+
+```bash
+python download_epstein_files.py -s 3159 -e 3857 -d "files/DataSet%202/"
+```
+
+### 3. Extract PDF Content
+
+```bash
 python extract_pdf_content.py
 ```
 
-### 3. Upload Images & Populate Database
+### 4. Upload Images & Populate Database
 
 ```bash
 cd scripts
@@ -48,14 +62,14 @@ python upload_to_cdn.py export  # Export URL mapping
 python populate_db.py           # Populate SQLite
 ```
 
-### 4. Start Backend (use WSL on Windows)
+### 5. Start Backend (use WSL on Windows)
 
 ```bash
 cd backend
 go run cmd/server/main.go
 ```
 
-### 5. Start Frontend
+### 6. Start Frontend
 
 ```bash
 cd frontend
@@ -64,6 +78,78 @@ npm run dev
 ```
 
 Open http://localhost:3000
+
+## Go Downloader
+
+Fast parallel downloader written in Go with 100 concurrent connections.
+
+### Usage
+
+```bash
+./downloader.exe [options]
+
+Options:
+  -d string    Dataset path (default "files/DataSet%201/")
+  -s int       Start file number (default 1)
+  -e int       End file number (default 2731783)
+  -o string    Output directory (default "../downloads")
+  -c int       Concurrent downloads (default 100)
+  -v           Verbose output (show each file)
+```
+
+### Examples
+
+```bash
+# Download DataSet 1, files 1-1000
+./downloader.exe -s 1 -e 1000
+
+# Download DataSet 2, specific range
+./downloader.exe -d "files/DataSet 2/" -s 3159 -e 3857
+
+# Verbose mode (see each file)
+./downloader.exe -d "files/DataSet 2/" -s 3159 -e 3857 -v
+
+# Custom output directory
+./downloader.exe -s 1 -e 100 -o "/path/to/downloads"
+
+# More concurrency
+./downloader.exe -s 1 -e 1000 -c 200
+```
+
+### Building
+
+Requires Go 1.21+
+
+**Build for current OS:**
+```bash
+cd downloader
+go build -o downloader .
+```
+
+**Cross-compile for Windows (from WSL/Linux):**
+```bash
+cd downloader
+GOOS=windows GOARCH=amd64 go build -o downloader.exe .
+```
+
+**Cross-compile for Linux (from Windows WSL):**
+```bash
+wsl -e bash -c "cd /mnt/j/p/Projects/esptein_files/downloader && GOOS=linux GOARCH=amd64 go build -o downloader-linux ."
+```
+
+**Cross-compile for macOS:**
+```bash
+GOOS=darwin GOARCH=amd64 go build -o downloader-mac .
+```
+
+### Environment
+
+The downloader reads cookies from `.env` file (searches current dir, parent, grandparent):
+
+```env
+DOJ_COOKIE_AK_BMSC=your_cookie_value
+DOJ_COOKIE_QUEUE_IT=your_queue_cookie
+```
 
 ## API Endpoints
 
@@ -86,6 +172,12 @@ Open http://localhost:3000
 
 ## Python Scripts
 
+### download_epstein_files.py
+- Async parallel downloads
+- Range support (`-s`, `-e`, `-d` flags)
+- Retry with exponential backoff
+- Resume capability
+
 ### upload_to_cdn.py
 - Parallel uploads to BunnyCDN
 - **Skips already uploaded** files
@@ -103,6 +195,21 @@ Open http://localhost:3000
 
 - **Backend**: Go + Gin + GORM
 - **Database**: SQLite + FTS5
-- **Frontend**: Next.js 14 + Tailwind CSS
+- **Frontend**: Next.js + Tailwind CSS
 - **Storage**: BunnyCDN
+- **Downloader**: Go (fast) / Python (async)
 - **Scripts**: Python (asyncio + aiohttp)
+
+## Deployment
+
+### Heroku
+
+Both frontend and backend support Heroku deployment using the monorepo buildpack.
+
+**Backend:**
+1. Add buildpacks: `heroku-buildpack-monorepo` + `heroku/go`
+2. Set config: `APP_BASE=backend`
+
+**Frontend:**
+1. Add buildpacks: `heroku-buildpack-monorepo` + `heroku/nodejs`
+2. Set config: `APP_BASE=frontend`, `NEXT_PUBLIC_API_URL=https://your-backend.herokuapp.com`
