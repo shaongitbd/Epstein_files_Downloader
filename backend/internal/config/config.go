@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -19,13 +20,18 @@ func Load() *Config {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		// Use absolute path for WSL compatibility
-		dbURL = "/mnt/j/p/Projects/esptein_files/data/archive.db"
+		// Default to archive.db in the current working directory (backend root)
+		dbURL = "./archive.db"
 	}
 
 	corsOrigins := []string{"http://localhost:3000", "http://localhost:8080"}
 	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
-		corsOrigins = append(corsOrigins, origins)
+		// Split comma-separated origins
+		for _, origin := range splitAndTrim(origins) {
+			if origin != "" {
+				corsOrigins = append(corsOrigins, origin)
+			}
+		}
 	}
 
 	return &Config{
@@ -33,6 +39,17 @@ func Load() *Config {
 		DatabaseURL: dbURL,
 		CORSOrigins: corsOrigins,
 	}
+}
+
+func splitAndTrim(s string) []string {
+	parts := []string{}
+	for _, p := range strings.Split(s, ",") {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return parts
 }
 
 func GetEnvInt(key string, defaultVal int) int {
