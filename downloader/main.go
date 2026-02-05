@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ var (
 	endNum      int
 	outputDir   string
 	concurrency int
+	verbose     bool
 
 	// Cookies
 	akBmsc      string
@@ -28,19 +30,17 @@ var (
 	queueIT     string
 
 	// Stats
-	downloaded  int64
-	failed      int64
-	skipped     int64
-	totalBytes  int64
+	downloaded int64
+	failed     int64
+	skipped    int64
+	totalBytes int64
+
+	// Shared transport for connection pooling
+	transport *http.Transport
 )
 
 func loadEnvFile() {
-	// Try multiple locations for .env file
-	paths := []string{
-		".env",
-		"../.env",
-		"../../.env",
-	}
+	paths := []string{".env", "../.env", "../../.env"}
 
 	for _, path := range paths {
 		file, err := os.Open(path)
@@ -59,7 +59,6 @@ func loadEnvFile() {
 			if len(parts) == 2 {
 				key := strings.TrimSpace(parts[0])
 				value := strings.TrimSpace(parts[1])
-				// Only set if not already set
 				if os.Getenv(key) == "" {
 					os.Setenv(key, value)
 				}
@@ -71,20 +70,19 @@ func loadEnvFile() {
 }
 
 func main() {
-	// Load .env file first
 	loadEnvFile()
 
 	flag.StringVar(&dataset, "d", "files/DataSet%201/", "Dataset path")
 	flag.IntVar(&startNum, "s", 1, "Start file number")
 	flag.IntVar(&endNum, "e", 2731783, "End file number")
 	flag.StringVar(&outputDir, "o", "downloads", "Output directory")
-	flag.IntVar(&concurrency, "c", 50, "Concurrent downloads")
+	flag.IntVar(&concurrency, "c", 100, "Concurrent downloads")
+	flag.BoolVar(&verbose, "v", false, "Verbose output (show each file)")
 	flag.StringVar(&akBmsc, "ak", "", "ak_bmsc cookie value")
 	flag.StringVar(&ageVerified, "age", "true", "justiceGovAgeVerified cookie")
 	flag.StringVar(&queueIT, "queue", "", "QueueITAccepted cookie value")
 	flag.Parse()
 
-	// Load from env if not provided via flags
 	if akBmsc == "" {
 		akBmsc = os.Getenv("DOJ_COOKIE_AK_BMSC")
 	}
@@ -99,17 +97,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create output directory
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		fmt.Printf("Error creating output dir: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Get already downloaded files
+	// Create optimized transport for connection reuse
+	transport = &http.Transport{
+		MaxIdleConns:        concurrency * 2,
+		MaxIdleConnsPerHost: concurrency * 2,
+		MaxConnsPerHost:     concurrency * 2,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+	}
+
 	existing := getExistingFiles()
 	fmt.Printf("Found %d existing files\n", len(existing))
 
-	// Build work queue
 	var work []int
 	for i := startNum; i <= endNum; i++ {
 		if _, exists := existing[i]; !exists {
@@ -130,35 +138,34 @@ func main() {
 	fmt.Printf("Files to download: %d\n", len(work))
 	fmt.Printf("Concurrency: %d\n", concurrency)
 	fmt.Printf("Output: %s\n", outputDir)
+	fmt.Printf("Verbose: %v\n", verbose)
 	fmt.Println("========================================")
 
 	startTime := time.Now()
 
-	// Create work channel
 	jobs := make(chan int, concurrency*2)
 	var wg sync.WaitGroup
 
-	// Start workers
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go worker(jobs, &wg)
 	}
 
-	// Progress reporter
 	done := make(chan bool)
-	go progressReporter(len(work), startTime, done)
+	if !verbose {
+		go progressReporter(len(work), startTime, done)
+	}
 
-	// Send work
 	for _, num := range work {
 		jobs <- num
 	}
 	close(jobs)
 
-	// Wait for completion
 	wg.Wait()
-	done <- true
+	if !verbose {
+		done <- true
+	}
 
-	// Final stats
 	elapsed := time.Since(startTime)
 	fmt.Println("\n========================================")
 	fmt.Println("DOWNLOAD COMPLETE")
@@ -168,16 +175,21 @@ func main() {
 	fmt.Printf("Failed: %d\n", failed)
 	fmt.Printf("Skipped (404): %d\n", skipped)
 	fmt.Printf("Total size: %.2f GB\n", float64(totalBytes)/1024/1024/1024)
-	fmt.Printf("Speed: %.1f files/sec\n", float64(downloaded)/elapsed.Seconds())
+	if elapsed.Seconds() > 0 {
+		fmt.Printf("Speed: %.1f files/sec (%.1f total/sec)\n",
+			float64(downloaded)/elapsed.Seconds(),
+			float64(downloaded+skipped+failed)/elapsed.Seconds())
+	}
 }
 
 func worker(jobs <-chan int, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	client := &http.Client{
-		Timeout: 60 * time.Second,
+		Transport: transport,
+		Timeout:   30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // Don't follow redirects
+			return http.ErrUseLastResponse
 		},
 	}
 
@@ -189,36 +201,42 @@ func worker(jobs <-chan int, wg *sync.WaitGroup) {
 func downloadFile(client *http.Client, num int) {
 	filename := fmt.Sprintf("EFTA%08d.pdf", num)
 	url := baseURL + dataset + filename
-	filepath := filepath.Join(outputDir, filename)
+	fpath := filepath.Join(outputDir, filename)
 
-	// Create request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		atomic.AddInt64(&failed, 1)
+		if verbose {
+			fmt.Printf("[FAIL] %s - request error: %v\n", filename, err)
+		}
 		return
 	}
 
-	// Set cookies
 	req.Header.Set("Cookie", fmt.Sprintf("ak_bmsc=%s; justiceGovAgeVerified=%s; QueueITAccepted-SDFrts345E-V3_usdojfiles=%s",
 		akBmsc, ageVerified, queueIT))
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("Connection", "keep-alive")
 
-	// Retry loop
 	maxRetries := 3
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		resp, err := client.Do(req)
 		if err != nil {
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			if verbose {
+				fmt.Printf("[RETRY] %s - attempt %d: %v\n", filename, attempt+1, err)
+			}
+			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 			continue
 		}
 
 		switch resp.StatusCode {
 		case 200:
-			// Success - save file
-			file, err := os.Create(filepath)
+			file, err := os.Create(fpath)
 			if err != nil {
 				resp.Body.Close()
 				atomic.AddInt64(&failed, 1)
+				if verbose {
+					fmt.Printf("[FAIL] %s - create error: %v\n", filename, err)
+				}
 				return
 			}
 
@@ -227,46 +245,61 @@ func downloadFile(client *http.Client, num int) {
 			resp.Body.Close()
 
 			if err != nil {
-				os.Remove(filepath)
+				os.Remove(fpath)
 				atomic.AddInt64(&failed, 1)
+				if verbose {
+					fmt.Printf("[FAIL] %s - write error: %v\n", filename, err)
+				}
 				return
 			}
 
 			atomic.AddInt64(&downloaded, 1)
 			atomic.AddInt64(&totalBytes, n)
+			if verbose {
+				fmt.Printf("[OK] %s - %d bytes\n", filename, n)
+			}
 			return
 
 		case 404:
 			resp.Body.Close()
 			atomic.AddInt64(&skipped, 1)
+			if verbose {
+				fmt.Printf("[404] %s - not found\n", filename)
+			}
 			return
 
 		case 429:
-			// Rate limited
 			resp.Body.Close()
-			time.Sleep(5 * time.Second)
+			if verbose {
+				fmt.Printf("[429] %s - rate limited, waiting...\n", filename)
+			}
+			time.Sleep(3 * time.Second)
 			continue
 
 		case 302:
-			// Cookie expired
 			resp.Body.Close()
-			fmt.Printf("\nWarning: 302 redirect on %d - cookies may be expired\n", num)
+			fmt.Printf("\n[WARN] %s - 302 redirect, cookies may be expired!\n", filename)
 			atomic.AddInt64(&failed, 1)
 			return
 
 		default:
 			resp.Body.Close()
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			if verbose {
+				fmt.Printf("[%d] %s - unexpected status, retrying...\n", resp.StatusCode, filename)
+			}
+			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 			continue
 		}
 	}
 
 	atomic.AddInt64(&failed, 1)
+	if verbose {
+		fmt.Printf("[FAIL] %s - max retries exceeded\n", filename)
+	}
 }
 
 func getExistingFiles() map[int]bool {
 	existing := make(map[int]bool)
-
 	files, err := os.ReadDir(outputDir)
 	if err != nil {
 		return existing
@@ -284,12 +317,11 @@ func getExistingFiles() map[int]bool {
 			}
 		}
 	}
-
 	return existing
 }
 
 func progressReporter(total int, startTime time.Time, done chan bool) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -302,11 +334,17 @@ func progressReporter(total int, startTime time.Time, done chan bool) {
 			s := atomic.LoadInt64(&skipped)
 			completed := d + f + s
 			elapsed := time.Since(startTime).Seconds()
-			speed := float64(d) / elapsed
-			remaining := float64(total-int(completed)) / speed
 
-			fmt.Printf("\rProgress: %d/%d | OK: %d | 404: %d | Failed: %d | %.1f files/sec | ETA: %.0fs     ",
-				completed, total, d, s, f, speed, remaining)
+			totalSpeed := float64(completed) / elapsed
+			downloadSpeed := float64(d) / elapsed
+
+			remaining := float64(0)
+			if totalSpeed > 0 {
+				remaining = float64(total-int(completed)) / totalSpeed
+			}
+
+			fmt.Printf("\rProgress: %d/%d | OK: %d | 404: %d | Fail: %d | %.0f/sec (%.0f dl/sec) | ETA: %.0fs     ",
+				completed, total, d, s, f, totalSpeed, downloadSpeed, remaining)
 		}
 	}
 }
