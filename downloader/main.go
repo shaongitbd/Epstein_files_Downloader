@@ -192,6 +192,48 @@ func main() {
 	fmt.Printf("File: %s\n", lastFilename)
 	fmt.Printf("URL: %s\n", lastURL)
 	fmt.Printf("Status: %d\n", lastStatus)
+
+	// Test request with full debug
+	fmt.Println("\n--- TEST REQUEST (with headers) ---")
+	testURL := baseURL + dataset + fmt.Sprintf("EFTA%08d.pdf", startNum)
+	fmt.Printf("Testing: %s\n", testURL)
+
+	testReq, _ := http.NewRequest("GET", testURL, nil)
+	testReq.Header.Set("Cookie", fmt.Sprintf("ak_bmsc=%s; justiceGovAgeVerified=%s; QueueITAccepted-SDFrts345E-V3_usdojfiles=%s",
+		akBmsc, ageVerified, queueIT))
+	testReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	testReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+	testReq.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	testReq.Header.Set("Connection", "keep-alive")
+
+	fmt.Println("Request Headers:")
+	for k, v := range testReq.Header {
+		if k == "Cookie" {
+			fmt.Printf("  %s: [%d chars]\n", k, len(v[0]))
+		} else {
+			fmt.Printf("  %s: %s\n", k, v)
+		}
+	}
+
+	testClient := &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			fmt.Printf("  -> Redirect to: %s\n", req.URL)
+			return nil // Follow redirects for test
+		},
+	}
+
+	testResp, err := testClient.Do(testReq)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+	} else {
+		fmt.Printf("Response Status: %d %s\n", testResp.StatusCode, testResp.Status)
+		fmt.Println("Response Headers:")
+		for k, v := range testResp.Header {
+			fmt.Printf("  %s: %s\n", k, v)
+		}
+		testResp.Body.Close()
+	}
 }
 
 func worker(jobs <-chan int, wg *sync.WaitGroup) {
