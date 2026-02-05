@@ -14,6 +14,7 @@ import aiohttp
 import aiofiles
 import os
 import json
+import argparse
 from pathlib import Path
 from tqdm import tqdm
 import time
@@ -26,9 +27,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-BASE_URL = "https://www.justice.gov/epstein/files/DataSet%201/"
-START_NUM = 1
-END_NUM = 2731783
+BASE_URL = "https://www.justice.gov/epstein/"
+DEFAULT_DATASET = "files/DataSet%201/"
+DEFAULT_START = 1
+DEFAULT_END = 2731783
 OUTPUT_DIR = Path("downloads")
 MAX_CONCURRENT = 30  # Conservative to avoid rate limits
 CHUNK_SIZE = 8192
@@ -128,9 +130,9 @@ def get_filename(num: int) -> str:
     return f"EFTA{num:08d}.pdf"
 
 
-def get_url(num: int) -> str:
+def get_url(num: int, dataset: str) -> str:
     """Generate URL for a given file number"""
-    return f"{BASE_URL}{get_filename(num)}"
+    return f"{BASE_URL}{dataset}{get_filename(num)}"
 
 
 def load_checkpoint() -> dict:
@@ -176,14 +178,15 @@ async def download_file_with_retry(
     semaphore: asyncio.Semaphore,
     rate_limiter: RateLimiter,
     stats: DownloadStats,
-    pbar: tqdm
+    pbar: tqdm,
+    dataset: str
 ) -> tuple[int, str, str]:
     """Download a single file with retries and exponential backoff"""
 
     async with semaphore:
         await rate_limiter.acquire()
 
-        url = get_url(num)
+        url = get_url(num, dataset)
         filepath = OUTPUT_DIR / get_filename(num)
         backoff = INITIAL_BACKOFF
 
@@ -256,7 +259,8 @@ async def download_file_with_retry(
 async def download_batch(
     nums: list[int],
     stats: DownloadStats,
-    pbar: tqdm
+    pbar: tqdm,
+    dataset: str
 ) -> list[tuple[int, str, str]]:
     """Download a batch of files"""
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
@@ -271,7 +275,7 @@ async def download_batch(
 
     async with aiohttp.ClientSession(connector=connector, cookies=COOKIES) as session:
         tasks = [
-            download_file_with_retry(session, num, semaphore, rate_limiter, stats, pbar)
+            download_file_with_retry(session, num, semaphore, rate_limiter, stats, pbar, dataset)
             for num in nums
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -303,7 +307,7 @@ def validate_cookies():
     return True
 
 
-async def main():
+async def main(start_num: int, end_num: int, dataset: str):
     # Validate cookies before starting
     if not validate_cookies():
         return
@@ -321,8 +325,8 @@ async def main():
     already_done.update(downloaded)
     logger.info(f"Found {len(already_done):,} already completed files")
 
-    # Generate list of files to download
-    to_download = [n for n in range(START_NUM, END_NUM + 1) if n not in already_done]
+    # Generate list of files to download within the specified range
+    to_download = [n for n in range(start_num, end_num + 1) if n not in already_done]
     total = len(to_download)
 
     if total == 0:
@@ -332,6 +336,8 @@ async def main():
     logger.info(f"=" * 60)
     logger.info(f"DOJ Epstein Files Downloader")
     logger.info(f"=" * 60)
+    logger.info(f"Dataset: {dataset}")
+    logger.info(f"Range: EFTA{start_num:08d} to EFTA{end_num:08d}")
     logger.info(f"Files to download: {total:,}")
     logger.info(f"Concurrent connections: {MAX_CONCURRENT}")
     logger.info(f"Rate limit: {REQUESTS_PER_SECOND} req/sec")
@@ -348,7 +354,7 @@ async def main():
     with tqdm(total=total, desc="Downloading", unit="file", dynamic_ncols=True) as pbar:
         for i in range(0, total, batch_size):
             batch = to_download[i:i + batch_size]
-            results = await download_batch(batch, stats, pbar)
+            results = await download_batch(batch, stats, pbar, dataset)
 
             # Process results
             for num, status, msg in results:
@@ -394,11 +400,34 @@ async def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Download Epstein files from DOJ",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python download_epstein_files.py                     # Download all from DataSet 1
+  python download_epstein_files.py -s 3159 -e 4000    # Download range 3159-4000
+  python download_epstein_files.py -d "files/DataSet%202/"  # Use different dataset
+  python download_epstein_files.py -d "files/DataSet%202/" -s 1 -e 1000  # Dataset 2, range 1-1000
+        """
+    )
+    parser.add_argument("-s", "--start", type=int, default=DEFAULT_START,
+                        help=f"Start file number (default: {DEFAULT_START})")
+    parser.add_argument("-e", "--end", type=int, default=DEFAULT_END,
+                        help=f"End file number (default: {DEFAULT_END})")
+    parser.add_argument("-d", "--dataset", type=str, default=DEFAULT_DATASET,
+                        help="Dataset path (default: files/DataSet%%201/)")
+
+    args = parser.parse_args()
+
+    print(f"Dataset: {args.dataset}")
+    print(f"Download range: EFTA{args.start:08d} to EFTA{args.end:08d}")
+
     if os.name == 'nt':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     try:
-        asyncio.run(main())
+        asyncio.run(main(args.start, args.end, args.dataset))
     except KeyboardInterrupt:
         logger.info("\nDownload interrupted by user. Progress saved to checkpoint.")
         logger.info("Run the script again to resume.")
