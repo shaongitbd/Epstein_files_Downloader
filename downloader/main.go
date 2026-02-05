@@ -35,6 +35,12 @@ var (
 	skipped    int64
 	totalBytes int64
 
+	// Debug - last request info
+	lastURL      string
+	lastStatus   int
+	lastFilename string
+	lastMu       sync.Mutex
+
 	// Shared transport for connection pooling
 	transport *http.Transport
 )
@@ -180,6 +186,12 @@ func main() {
 			float64(downloaded)/elapsed.Seconds(),
 			float64(downloaded+skipped+failed)/elapsed.Seconds())
 	}
+
+	// Debug info
+	fmt.Println("\n--- DEBUG (Last Request) ---")
+	fmt.Printf("File: %s\n", lastFilename)
+	fmt.Printf("URL: %s\n", lastURL)
+	fmt.Printf("Status: %d\n", lastStatus)
 }
 
 func worker(jobs <-chan int, wg *sync.WaitGroup) {
@@ -202,6 +214,12 @@ func downloadFile(client *http.Client, num int) {
 	filename := fmt.Sprintf("EFTA%08d.pdf", num)
 	url := baseURL + dataset + filename
 	fpath := filepath.Join(outputDir, filename)
+
+	// Save for debug
+	lastMu.Lock()
+	lastURL = url
+	lastFilename = filename
+	lastMu.Unlock()
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -227,6 +245,11 @@ func downloadFile(client *http.Client, num int) {
 			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 			continue
 		}
+
+		// Save status for debug
+		lastMu.Lock()
+		lastStatus = resp.StatusCode
+		lastMu.Unlock()
 
 		switch resp.StatusCode {
 		case 200:
