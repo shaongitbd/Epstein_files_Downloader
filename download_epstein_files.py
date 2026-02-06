@@ -351,12 +351,23 @@ async def download_file_with_retry(
         backoff = INITIAL_BACKOFF
 
         for attempt in range(MAX_RETRIES):
-            proxy = await proxy_pool.get_proxy()
+            proxy_url = await proxy_pool.get_proxy()
+            proxy = None
+            proxy_auth = None
+            if proxy_url:
+                from urllib.parse import urlparse
+                parsed = urlparse(proxy_url)
+                if parsed.username:
+                    proxy_auth = aiohttp.BasicAuth(parsed.username, parsed.password or "")
+                    proxy = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+                else:
+                    proxy = proxy_url
             try:
                 async with session.get(
                     url,
                     timeout=aiohttp.ClientTimeout(total=60),
-                    proxy=proxy
+                    proxy=proxy,
+                    proxy_auth=proxy_auth
                 ) as response:
                     if response.status == 200:
                         content = await response.read()
