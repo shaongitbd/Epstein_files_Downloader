@@ -57,10 +57,10 @@ PROXY_CHUNK_SIZE = 50  # Number of proxies to use per rotation
 # Cookie harvesting
 COOKIE_HARVEST_URL = "https://www.justice.gov/epstein/doj-disclosures"
 
-# Load cookies from environment variables
+# Cookies - browser harvest will populate these; .env values are fallback
 COOKIES = {
+    "justiceGovAgeVerified": "true",
     "ak_bmsc": os.getenv("DOJ_COOKIE_AK_BMSC", ""),
-    "justiceGovAgeVerified": os.getenv("DOJ_COOKIE_AGE_VERIFIED", "true"),
     "QueueITAccepted-SDFrts345E-V3_usdojfiles": os.getenv("DOJ_COOKIE_QUEUE_IT", ""),
 }
 
@@ -136,8 +136,12 @@ class ProxyPool:
             return proxy
 
 
-async def harvest_cookies_with_browser(headless: bool = True) -> dict[str, str]:
-    """Launch a browser to automatically obtain DOJ cookies (Akamai + Queue-IT).
+async def harvest_cookies_with_browser(headless: bool = True, dataset: str = DEFAULT_DATASET, probe_file: int = 1) -> dict[str, str]:
+    """Launch a browser to obtain DOJ cookies by passing the age gate.
+
+    Navigates to the DOJ disclosures page, clicks the age verification ("Yes"),
+    then probes an actual file URL to trigger any download-specific cookies
+    (Akamai, Queue-IT, etc.).
 
     Tries patchright first (better anti-detection), falls back to playwright.
     Returns a dict of cookie name -> value.
@@ -171,39 +175,47 @@ async def harvest_cookies_with_browser(headless: bool = True) -> dict[str, str]:
         page = await context.new_page()
 
         try:
+            # Step 1: Navigate to disclosures page
             logger.info(f"Navigating to {COOKIE_HARVEST_URL}...")
             await page.goto(COOKIE_HARVEST_URL, wait_until="networkidle", timeout=60000)
 
-            # Check for Queue-IT virtual waiting room redirect
+            # Step 2: Check for Queue-IT waiting room
             if "queue-it" in page.url.lower() or "queue.it" in page.url.lower():
                 logger.info("In Queue-IT waiting room, waiting to pass through (up to 5 min)...")
                 await page.wait_for_url("**/justice.gov/**", timeout=300000)
                 logger.info("Passed through Queue-IT")
 
-            # Wait for Akamai sensor JS to finish executing
-            await page.wait_for_timeout(5000)
+            # Step 3: Click age verification "Yes" button
+            try:
+                yes_btn = page.get_by_role("button", name="Yes")
+                if await yes_btn.is_visible(timeout=3000):
+                    logger.info("Clicking age verification 'Yes' button...")
+                    await yes_btn.click()
+                    await page.wait_for_timeout(2000)
+            except Exception:
+                # Age gate might not be present or already passed
+                logger.debug("No age verification gate found, continuing...")
 
-            # Extract all cookies for the domain
+            # Step 4: Probe an actual file URL to trigger download-specific cookies
+            probe_url = f"{BASE_URL}{dataset}{get_filename(probe_file)}"
+            logger.info(f"Probing file URL to trigger cookies: {probe_url}")
+            try:
+                await page.goto(probe_url, wait_until="networkidle", timeout=30000)
+                await page.wait_for_timeout(3000)
+            except Exception as e:
+                logger.debug(f"Probe navigation ended with: {e}")
+
+            # Step 5: Extract all cookies
             cookies = await context.cookies()
             cookie_dict = {c["name"]: c["value"] for c in cookies}
 
-            # Report what we found
-            important = ["ak_bmsc", "_abck", "bm_sv"]
-            # Also check for any QueueIT cookie
-            queue_it_cookies = [n for n in cookie_dict if n.startswith("QueueITAccepted")]
-            found = 0
-            for name in important:
-                if name in cookie_dict:
-                    logger.info(f"  Got: {name} ({len(cookie_dict[name])} chars)")
-                    found += 1
-            for name in queue_it_cookies:
-                logger.info(f"  Got: {name} ({len(cookie_dict[name])} chars)")
-                found += 1
-
-            if found == 0:
-                logger.warning("No relevant cookies found - site protection may have changed")
+            # Log all cookies found
+            if cookie_dict:
+                logger.info(f"Found {len(cookie_dict)} cookies:")
+                for name, value in cookie_dict.items():
+                    logger.info(f"  {name} ({len(value)} chars)")
             else:
-                logger.info(f"Harvested {found} relevant cookies")
+                logger.warning("No cookies found at all")
 
             return cookie_dict
 
@@ -445,21 +457,17 @@ async def download_batch(
 
 
 def validate_cookies():
-    """Validate that required cookies are present (from browser or .env)"""
-    missing = []
-    if not COOKIES.get("ak_bmsc"):
-        missing.append("ak_bmsc")
-    # Check for any QueueIT cookie
-    has_queue_it = any(k.startswith("QueueITAccepted") for k in COOKIES if COOKIES[k])
-    if not has_queue_it:
-        missing.append("QueueITAccepted-*")
-
-    if missing:
-        logger.error("Missing required cookies:")
-        for cookie in missing:
-            logger.error(f"  - {cookie}")
-        logger.error("Try: --show-browser to debug, or set DOJ_COOKIE_AK_BMSC / DOJ_COOKIE_QUEUE_IT in .env")
+    """Log cookie status. Only justiceGovAgeVerified is strictly required."""
+    if not COOKIES.get("justiceGovAgeVerified"):
+        logger.error("Missing justiceGovAgeVerified cookie")
         return False
+
+    # Log optional cookies (site may or may not require these)
+    if COOKIES.get("ak_bmsc"):
+        logger.info("  ak_bmsc cookie present")
+    if any(k.startswith("QueueITAccepted") for k in COOKIES if COOKIES[k]):
+        logger.info("  QueueIT cookie present")
+
     return True
 
 
@@ -469,16 +477,14 @@ async def main(start_num: int, end_num: int, dataset: str, proxy_chunk_size: int
 
     # Try to harvest cookies with headless browser
     if use_browser:
-        browser_cookies = await harvest_cookies_with_browser(headless=headless)
+        browser_cookies = await harvest_cookies_with_browser(
+            headless=headless, dataset=dataset, probe_file=start_num
+        )
         if browser_cookies:
             COOKIES.update(browser_cookies)
             logger.info("Using browser-harvested cookies")
         else:
             logger.warning("Browser cookie harvest failed, falling back to .env cookies")
-
-    # Validate cookies before starting
-    if not validate_cookies():
-        return
 
     # Create output directory
     OUTPUT_DIR.mkdir(exist_ok=True)
