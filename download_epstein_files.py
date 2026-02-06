@@ -331,8 +331,47 @@ def get_downloaded_files() -> set:
     return downloaded
 
 
+DOWNLOAD_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.justice.gov/epstein/doj-disclosures",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+}
+
+
+def _make_session(proxy_url: str | None = None) -> aiohttp.ClientSession:
+    """Create an aiohttp session, optionally routed through a proxy.
+
+    Uses aiohttp_socks ProxyConnector for proxy connections (handles auth
+    correctly for HTTPS CONNECT tunneling). Falls back to plain TCPConnector.
+    """
+    connector = None
+    if proxy_url:
+        try:
+            from aiohttp_socks import ProxyConnector
+            connector = ProxyConnector.from_url(proxy_url)
+        except ImportError:
+            # Fallback: pass proxy URL directly (may fail with auth on HTTPS)
+            logger.warning("aiohttp_socks not installed, proxy auth may not work for HTTPS")
+            connector = aiohttp.TCPConnector(enable_cleanup_closed=True)
+    if connector is None:
+        connector = aiohttp.TCPConnector(enable_cleanup_closed=True)
+
+    return aiohttp.ClientSession(
+        connector=connector,
+        cookies=COOKIES,
+        headers=DOWNLOAD_HEADERS,
+        timeout=aiohttp.ClientTimeout(total=60),
+    )
+
+
 async def download_file_with_retry(
-    session: aiohttp.ClientSession,
     num: int,
     semaphore: asyncio.Semaphore,
     rate_limiter: RateLimiter,
@@ -352,79 +391,71 @@ async def download_file_with_retry(
 
         for attempt in range(MAX_RETRIES):
             proxy_url = await proxy_pool.get_proxy()
-            proxy = None
-            proxy_auth = None
-            if proxy_url:
-                from urllib.parse import urlparse
-                parsed = urlparse(proxy_url)
-                if parsed.username:
-                    proxy_auth = aiohttp.BasicAuth(parsed.username, parsed.password or "")
-                    proxy = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
-                else:
-                    proxy = proxy_url
-            try:
-                async with session.get(
-                    url,
-                    timeout=aiohttp.ClientTimeout(total=60),
-                    proxy=proxy,
-                    proxy_auth=proxy_auth
-                ) as response:
-                    if response.status == 200:
-                        content = await response.read()
-                        async with aiofiles.open(filepath, 'wb') as f:
-                            await f.write(content)
-                        await stats.record_success(len(content))
-                        pbar.update(1)
-                        return (num, "success", f"{len(content)} bytes")
+            # Each attempt gets its own session so proxy connector matches
+            async with _make_session(proxy_url) as session:
+                try:
+                    # If aiohttp_socks not available, pass proxy URL directly
+                    kwargs = {}
+                    if proxy_url:
+                        try:
+                            from aiohttp_socks import ProxyConnector  # noqa
+                        except ImportError:
+                            kwargs["proxy"] = proxy_url
 
-                    elif response.status == 404:
-                        await stats.record_404()
-                        pbar.update(1)
-                        return (num, "not_found", "404")
+                    async with session.get(url, **kwargs) as response:
+                        if response.status == 200:
+                            content = await response.read()
+                            async with aiofiles.open(filepath, 'wb') as f:
+                                await f.write(content)
+                            await stats.record_success(len(content))
+                            pbar.update(1)
+                            return (num, "success", f"{len(content)} bytes")
 
-                    elif response.status == 429:
-                        # Rate limited - pause and retry
-                        logger.warning(f"Rate limited (429) on {num}, pausing {RATE_LIMIT_PAUSE}s...")
-                        await stats.record_retry()
-                        await asyncio.sleep(RATE_LIMIT_PAUSE + random.uniform(0, 5))
-                        continue
+                        elif response.status == 404:
+                            await stats.record_404()
+                            pbar.update(1)
+                            return (num, "not_found", "404")
 
-                    elif response.status == 503:
-                        # Server overloaded
-                        logger.warning(f"Server busy (503) on {num}, backing off {backoff}s...")
-                        await stats.record_retry()
-                        await asyncio.sleep(backoff + random.uniform(0, 2))
-                        backoff = min(backoff * 2, MAX_BACKOFF)
-                        continue
+                        elif response.status == 429:
+                            logger.warning(f"Rate limited (429) on {num}, pausing {RATE_LIMIT_PAUSE}s...")
+                            await stats.record_retry()
+                            await asyncio.sleep(RATE_LIMIT_PAUSE + random.uniform(0, 5))
+                            continue
 
-                    elif response.status == 302:
-                        # Redirect - likely cookie expired
-                        logger.error(f"Got 302 redirect on {num} - cookies may have expired!")
-                        return (num, "failed", "Cookie expired - 302 redirect")
+                        elif response.status == 503:
+                            logger.warning(f"Server busy (503) on {num}, backing off {backoff}s...")
+                            await stats.record_retry()
+                            await asyncio.sleep(backoff + random.uniform(0, 2))
+                            backoff = min(backoff * 2, MAX_BACKOFF)
+                            continue
 
-                    else:
-                        logger.warning(f"HTTP {response.status} for {num}")
-                        await stats.record_retry()
-                        await asyncio.sleep(backoff)
-                        backoff = min(backoff * 2, MAX_BACKOFF)
+                        elif response.status == 302:
+                            logger.error(f"Got 302 redirect on {num} - cookies may have expired!")
+                            return (num, "failed", "Cookie expired - 302 redirect")
 
-            except asyncio.TimeoutError:
-                await stats.record_retry()
-                logger.warning(f"Timeout on {num}, attempt {attempt + 1}/{MAX_RETRIES}")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, MAX_BACKOFF)
+                        else:
+                            logger.warning(f"HTTP {response.status} for {num}")
+                            await stats.record_retry()
+                            await asyncio.sleep(backoff)
+                            backoff = min(backoff * 2, MAX_BACKOFF)
 
-            except aiohttp.ClientError as e:
-                await stats.record_retry()
-                logger.warning(f"Connection error on {num}, attempt {attempt + 1}/{MAX_RETRIES}: {e}")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, MAX_BACKOFF)
+                except asyncio.TimeoutError:
+                    await stats.record_retry()
+                    logger.warning(f"Timeout on {num}, attempt {attempt + 1}/{MAX_RETRIES}")
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, MAX_BACKOFF)
 
-            except Exception as e:
-                await stats.record_retry()
-                logger.error(f"Unexpected error on {num}: {e}")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, MAX_BACKOFF)
+                except aiohttp.ClientError as e:
+                    await stats.record_retry()
+                    logger.warning(f"Connection error on {num}, attempt {attempt + 1}/{MAX_RETRIES}: {e}")
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, MAX_BACKOFF)
+
+                except Exception as e:
+                    await stats.record_retry()
+                    logger.error(f"Unexpected error on {num}: {e}")
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, MAX_BACKOFF)
 
         # All retries exhausted
         await stats.record_failure()
@@ -443,32 +474,11 @@ async def download_batch(
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
     rate_limiter = RateLimiter(REQUESTS_PER_SECOND)
 
-    connector = aiohttp.TCPConnector(
-        limit=MAX_CONCURRENT,
-        limit_per_host=MAX_CONCURRENT,
-        ttl_dns_cache=300,
-        enable_cleanup_closed=True
-    )
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://www.justice.gov/epstein/doj-disclosures",
-        "DNT": "1",
-        "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-    }
-
-    async with aiohttp.ClientSession(connector=connector, cookies=COOKIES, headers=headers) as session:
-        tasks = [
-            download_file_with_retry(session, num, semaphore, rate_limiter, stats, pbar, dataset, proxy_pool)
-            for num in nums
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    tasks = [
+        download_file_with_retry(num, semaphore, rate_limiter, stats, pbar, dataset, proxy_pool)
+        for num in nums
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     processed = []
     for i, result in enumerate(results):
