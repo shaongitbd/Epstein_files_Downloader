@@ -39,13 +39,13 @@ The Python downloader automatically obtains DOJ cookies using a headless browser
 
 ```bash
 # Recommended (better anti-detection)
-pip install patchright && patchright install chromium
+pip install patchright && python -m patchright install chromium
 
 # On Linux, install system dependencies
 patchright install-deps chromium
 
 # Alternative
-pip install playwright && playwright install chromium
+pip install playwright && python -m playwright install chromium
 ```
 
 ### 2. Download PDFs

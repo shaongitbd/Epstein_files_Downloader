@@ -506,7 +506,7 @@ def validate_cookies():
 
 
 async def main(start_num: int, end_num: int, dataset: str, proxy_chunk_size: int,
-               use_browser: bool = True, headless: bool = True):
+               use_browser: bool = True, headless: bool = True, no_proxy: bool = False):
     global COOKIES
 
     # Try to harvest cookies with headless browser
@@ -524,7 +524,8 @@ async def main(start_num: int, end_num: int, dataset: str, proxy_chunk_size: int
     OUTPUT_DIR.mkdir(exist_ok=True)
 
     # Initialize proxy pool
-    proxy_pool = ProxyPool(PROXY_FILE, proxy_chunk_size)
+    proxy_file = PROXY_FILE if not no_proxy else "__nonexistent__"
+    proxy_pool = ProxyPool(proxy_file, proxy_chunk_size)
 
     # Load checkpoint
     checkpoint = load_checkpoint()
@@ -638,6 +639,8 @@ Examples:
                         help="Dataset path (default: files/DataSet%%201/)")
     parser.add_argument("--proxy-chunk", type=int, default=PROXY_CHUNK_SIZE,
                         help=f"Number of proxies per rotation chunk (default: {PROXY_CHUNK_SIZE})")
+    parser.add_argument("--no-proxy", action="store_true",
+                        help="Skip proxies even if proxies.txt exists")
     parser.add_argument("--no-browser", action="store_true",
                         help="Skip automatic browser cookie harvest, use .env cookies only")
     parser.add_argument("--show-browser", action="store_true",
@@ -655,7 +658,8 @@ Examples:
         asyncio.run(main(
             args.start, args.end, args.dataset, args.proxy_chunk,
             use_browser=not args.no_browser,
-            headless=not args.show_browser
+            headless=not args.show_browser,
+            no_proxy=args.no_proxy
         ))
     except KeyboardInterrupt:
         logger.info("\nDownload interrupted by user. Progress saved to checkpoint.")
