@@ -5,8 +5,13 @@
   --foreground: #e8e6e3;
   --amber: #d4a84b;
   --amber-dim: #8b6914;
+  --amber-glow: rgba(212, 168, 75, 0.15);
   --red-accent: #c41e3a;
   --paper: #f4f1ea;
+  --surface-1: #0a0a0b;
+  --surface-2: #111113;
+  --surface-3: #1a1a1c;
+  --border-subtle: rgba(255, 255, 255, 0.06);
 }
 
 @theme inline {
@@ -15,6 +20,7 @@
   --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;
   --font-serif: var(--font-serif), Georgia, serif;
+  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
@@ -221,6 +227,64 @@ body {
   100% { transform: translateY(100vh); }
 }
 
+/* New keyframes */
+@keyframes counter-roll {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes horizontal-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes tab-underline {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes radar-ping {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    ANIMATION UTILITIES
    ═══════════════════════════════════════════════════════════════════ */
@@ -267,6 +331,29 @@ body {
 
 .animate-float {
   animation: float 3s ease-in-out infinite;
+}
+
+.animate-counter-roll {
+  animation: counter-roll 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+.animate-horizontal-reveal {
+  animation: horizontal-reveal 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-tab-underline {
+  animation: tab-underline 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: left;
+}
+
+.animate-radar-ping {
+  animation: radar-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.animate-slide-up-fade {
+  animation: slide-up-fade 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  opacity: 0;
 }
 
 /* Staggered delays */
@@ -446,6 +533,63 @@ body {
   left: 150%;
 }
 
+/* Shimmer surface — animated sweep overlay */
+.shimmer-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgba(212, 168, 75, 0.08) 50%,
+    transparent 70%
+  );
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Glass surface */
+.glass-surface {
+  background: rgba(10, 10, 11, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+}
+
+/* HR amber divider */
+.hr-amber {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--amber-dim), transparent);
+  border: none;
+}
+
+/* Edge highlight — top amber line */
+.edge-highlight {
+  position: relative;
+}
+
+.edge-highlight::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--amber), transparent);
+  opacity: 0.4;
+}
+
+/* Ambient glow — diffuse light behind element */
+.ambient-glow {
+  box-shadow:
+    0 0 60px -20px var(--amber-glow),
+    0 0 120px -40px var(--amber-glow);
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    TYPOGRAPHY ENHANCEMENTS
    ═══════════════════════════════════════════════════════════════════ */
@@ -505,11 +649,11 @@ body {
 }
 
 .card-hover:hover {
-  transform: translateY(-8px) scale(1.02);
+  transform: translateY(-4px) scale(1.01);
   box-shadow:
     0 20px 40px -15px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(212, 168, 75, 0.3),
-    0 0 30px -10px rgba(212, 168, 75, 0.2);
+    0 0 40px -10px var(--amber-glow);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -591,6 +735,16 @@ input:focus,
 button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--amber);
+}
+
+/* Search focus ring — custom for search inputs */
+.search-focus-ring:focus {
+  box-shadow: none;
+  border-color: rgba(212, 168, 75, 0.5);
+}
+
+.search-focus-ring:focus ~ .search-glow-line {
+  opacity: 1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════

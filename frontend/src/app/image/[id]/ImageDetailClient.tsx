@@ -148,7 +148,7 @@ export function ImageDetailClient({ image }: { image: Image }) {
             <div>
               {/* Classification badge */}
               <div className="inline-flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
-                <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-red-500/10 border-2 border-red-500/30">
+                <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-red-500/10 border-2 border-red-500/30 shimmer-surface">
                   <Shield size={12} className="text-red-500 sm:w-3.5 sm:h-3.5" />
                   <span className="font-mono text-[9px] sm:text-[10px] font-bold tracking-[0.2em] sm:tracking-[0.25em] text-red-500">
                     DECLASSIFIED
@@ -167,15 +167,17 @@ export function ImageDetailClient({ image }: { image: Image }) {
                 </h1>
               </Link>
 
+              {/* Decorative separator */}
+              <div className="flex items-center gap-2 mt-1.5 sm:mt-2">
+                <div className="w-8 sm:w-12 h-px bg-gradient-to-r from-amber-500 to-transparent" />
+                <div className="w-1 h-1 rotate-45 bg-amber-500/60" />
+                <div className="w-12 sm:w-16 h-px bg-gradient-to-r from-amber-500/40 to-transparent" />
+              </div>
+
               {/* Subtitle */}
               <p className="font-mono text-[10px] sm:text-xs text-zinc-500 tracking-[0.2em] sm:tracking-[0.3em] mt-1 sm:mt-2">
                 DOCUMENT & IMAGE ARCHIVE
               </p>
-
-              {/* Decorative line */}
-              <div className="flex items-center gap-3 mt-2 sm:mt-3">
-                <div className="w-12 sm:w-16 h-px bg-gradient-to-r from-amber-500 to-transparent" />
-              </div>
             </div>
 
             {/* Search bar */}
@@ -187,9 +189,11 @@ export function ImageDetailClient({ image }: { image: Image }) {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search documents..."
-                  className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-zinc-900/50 border border-zinc-800 font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all duration-300"
+                  className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-zinc-900/50 border border-zinc-800 font-mono text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all duration-300 search-focus-ring"
                 />
-                {/* Search glow effect */}
+                {/* Bottom glow line on focus */}
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500/60 to-transparent opacity-0 group-focus-within:opacity-100 transition-opacity duration-300" />
+                {/* Ambient blur */}
                 <div className="absolute inset-0 -z-10 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300">
                   <div className="absolute inset-0 bg-amber-500/5 blur-xl" />
                 </div>
@@ -202,25 +206,28 @@ export function ImageDetailClient({ image }: { image: Image }) {
         <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
       </header>
 
-      {/* Document Navigation Bar */}
-      <div className="border-b border-zinc-800/50 bg-zinc-900/50 backdrop-blur-sm sticky top-0 z-40">
+      {/* Document Navigation Bar — glass morphism */}
+      <div className="border-b border-zinc-800/50 glass-surface sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Link
                 href="/"
-                className="flex items-center gap-2 font-mono text-xs text-zinc-400 hover:text-amber-500 transition-colors"
+                className="group flex items-center gap-2 font-mono text-xs text-zinc-400 hover:text-amber-500 transition-colors"
               >
-                <ArrowLeft size={14} />
+                <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-1" />
                 <span className="hidden sm:inline">Gallery</span>
               </Link>
               <div className="w-px h-5 bg-zinc-800" />
-              <span className="font-mono text-sm font-semibold px-3 py-1.5 bg-amber-500/10 border border-amber-500 text-amber-500">
-                {image.document_id}
-              </span>
-              <span className="font-mono text-sm px-3 py-1.5 bg-zinc-800 border border-zinc-700 text-zinc-400">
-                PAGE {image.page}
-              </span>
+              {/* Connected document ID + page badges */}
+              <div className="flex items-center gap-0">
+                <span className="font-mono text-sm font-semibold px-3 py-1.5 bg-amber-500/10 border border-amber-500 text-amber-500 border-r-0">
+                  {image.document_id}
+                </span>
+                <span className="font-mono text-sm px-3 py-1.5 bg-zinc-800 border border-zinc-700 text-zinc-400">
+                  PAGE {image.page}
+                </span>
+              </div>
             </div>
 
             <div className="relative">
@@ -232,7 +239,7 @@ export function ImageDetailClient({ image }: { image: Image }) {
                 <span className="hidden sm:inline">{linkCopied ? 'COPIED!' : 'SHARE'}</span>
               </button>
 
-              {/* Share dropdown menu */}
+              {/* Share dropdown menu — backdrop blur + top amber glow */}
               {showShareMenu && (
                 <>
                   {/* Backdrop */}
@@ -242,39 +249,39 @@ export function ImageDetailClient({ image }: { image: Image }) {
                   />
 
                   {/* Menu */}
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-900 border border-zinc-700 shadow-xl z-50 animate-fade-in">
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-900/95 backdrop-blur-md border border-zinc-700 shadow-xl z-50 animate-fade-in edge-highlight">
                     <div className="p-1">
                       <button
                         onClick={shareToTwitter}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-amber-500/10 hover:text-white transition-colors"
                       >
                         <XIcon />
                         Share on X
                       </button>
                       <button
                         onClick={shareToFacebook}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-amber-500/10 hover:text-white transition-colors"
                       >
                         <FacebookIcon />
                         Share on Facebook
                       </button>
                       <button
                         onClick={shareToWhatsApp}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-amber-500/10 hover:text-white transition-colors"
                       >
                         <WhatsAppIcon />
                         Share on WhatsApp
                       </button>
                       <button
                         onClick={shareToTelegram}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-amber-500/10 hover:text-white transition-colors"
                       >
                         <TelegramIcon />
                         Share on Telegram
                       </button>
                       <button
                         onClick={shareToReddit}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-amber-500/10 hover:text-white transition-colors"
                       >
                         <RedditIcon />
                         Share on Reddit
@@ -282,14 +289,14 @@ export function ImageDetailClient({ image }: { image: Image }) {
                       <div className="my-1 border-t border-zinc-800" />
                       <button
                         onClick={shareToEmail}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-amber-500/10 hover:text-white transition-colors"
                       >
                         <EmailIcon />
                         Share via Email
                       </button>
                       <button
                         onClick={shareLink}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 font-mono text-xs text-zinc-300 hover:bg-amber-500/10 hover:text-white transition-colors"
                       >
                         <Copy size={14} />
                         Copy Link
@@ -308,18 +315,32 @@ export function ImageDetailClient({ image }: { image: Image }) {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 lg:gap-8">
           {/* Image section */}
           <div className="space-y-4">
-            <div className="relative bg-black border border-zinc-800 p-4 sm:p-6">
-              {/* Corner brackets */}
-              <div className="absolute top-4 left-4 w-6 h-6 border-l-2 border-t-2 border-amber-500/30" />
-              <div className="absolute top-4 right-4 w-6 h-6 border-r-2 border-t-2 border-amber-500/30" />
-              <div className="absolute bottom-4 left-4 w-6 h-6 border-l-2 border-b-2 border-amber-500/30" />
-              <div className="absolute bottom-4 right-4 w-6 h-6 border-r-2 border-b-2 border-amber-500/30" />
+            <div className="relative bg-black border border-zinc-800 p-4 sm:p-6 ambient-glow">
+              {/* Refined 1px corner brackets */}
+              <div className="absolute top-3 left-3 w-5 h-5 border-l border-t border-amber-500/30" />
+              <div className="absolute top-3 right-3 w-5 h-5 border-r border-t border-amber-500/30" />
+              <div className="absolute bottom-3 left-3 w-5 h-5 border-l border-b border-amber-500/30" />
+              <div className="absolute bottom-3 right-3 w-5 h-5 border-r border-b border-amber-500/30" />
+
+              {/* Document number overlay — subtle, top center */}
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
+                <span className="font-mono text-[9px] text-zinc-600/50 tracking-widest">
+                  {image.document_id} / P{image.page}
+                </span>
+              </div>
 
               <img
                 src={image.cdn_url}
                 alt={`Document ${image.document_id} - Page ${image.page}`}
-                className="w-full h-auto max-h-[70vh] object-contain mx-auto"
+                className="w-full h-auto max-h-[70vh] object-contain mx-auto drop-shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
               />
+
+              {/* DECLASSIFIED watermark — bottom right, very faint */}
+              <div className="absolute bottom-4 right-4 z-10 pointer-events-none">
+                <span className="font-mono text-[8px] tracking-[0.3em] text-red-500/10 rotate-0">
+                  DECLASSIFIED
+                </span>
+              </div>
             </div>
 
             {/* Action buttons */}
@@ -350,7 +371,7 @@ export function ImageDetailClient({ image }: { image: Image }) {
 
           {/* Info panel */}
           <div className="bg-zinc-900/30 border border-zinc-800">
-            {/* Tabs */}
+            {/* Tabs — active icon scales up, gradient underline, background tint */}
             <div className="flex border-b border-zinc-800">
               {tabs.map((tab) => (
                 <button
@@ -358,14 +379,16 @@ export function ImageDetailClient({ image }: { image: Image }) {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 font-mono text-xs tracking-wider transition-all relative ${
                     activeTab === tab.id
-                      ? 'text-amber-500 bg-zinc-900/50'
+                      ? 'text-amber-500 bg-amber-500/5'
                       : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30'
                   }`}
                 >
-                  {tab.icon}
+                  <span className={`transition-transform ${activeTab === tab.id ? 'scale-110' : ''}`}>
+                    {tab.icon}
+                  </span>
                   <span className="hidden sm:inline">{tab.label}</span>
                   {activeTab === tab.id && (
-                    <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500" />
+                    <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-500/50 via-amber-500 to-amber-500/50 animate-tab-underline" />
                   )}
                 </button>
               ))}
@@ -475,7 +498,7 @@ export function ImageDetailClient({ image }: { image: Image }) {
                           key={key}
                           className="group grid grid-cols-[140px_1fr] gap-4 py-2.5 px-3 border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
                         >
-                          <span className="font-mono text-[11px] text-zinc-500 truncate">{key}</span>
+                          <span className="font-mono text-[11px] text-zinc-500 truncate group-hover:text-zinc-400 transition-colors">{key}</span>
                           <span className="font-mono text-[11px] text-zinc-300 break-all group-hover:text-amber-400 transition-colors">
                             {String(value)}
                           </span>
@@ -495,9 +518,12 @@ export function ImageDetailClient({ image }: { image: Image }) {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-zinc-800/50 bg-zinc-950 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      {/* Footer — matches homepage */}
+      <footer className="relative border-t border-zinc-800/50 bg-zinc-950 mt-auto overflow-hidden">
+        {/* Security stripe background */}
+        <div className="absolute inset-0 security-stripe opacity-40" />
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           {/* Main footer content */}
           <div className="flex flex-col items-center gap-4 sm:gap-6 mb-4 sm:mb-6 text-center">
             <div>
@@ -510,17 +536,25 @@ export function ImageDetailClient({ image }: { image: Image }) {
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 font-mono text-[10px] sm:text-[11px] text-zinc-600">
               <span className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                DATA SOURCE: justice.gov/epstein
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                ARCHIVE ONLINE
               </span>
+              <span className="text-zinc-700">|</span>
+              <span>DATA SOURCE: justice.gov/epstein</span>
               <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-500">
                 v1.0
               </span>
             </div>
           </div>
 
+          {/* HR amber divider */}
+          <div className="hr-amber mb-4 sm:mb-6" />
+
           {/* Branding */}
-          <div className="pt-4 sm:pt-6 border-t border-zinc-800/50 flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
               <span className="font-mono text-[10px] sm:text-[11px] text-zinc-600">Developed by</span>
               <a
@@ -536,7 +570,7 @@ export function ImageDetailClient({ image }: { image: Image }) {
             <div className="flex items-center gap-2 font-mono text-[10px] text-zinc-700">
               <span>Built with</span>
               <span className="px-1.5 py-0.5 bg-cyan-500/10 border border-cyan-500/20 text-cyan-500">Go</span>
-              <span>&</span>
+              <span>&amp;</span>
               <span className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 text-zinc-400">Next.js</span>
             </div>
           </div>
@@ -548,9 +582,9 @@ export function ImageDetailClient({ image }: { image: Image }) {
 
 function MetaCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="p-3 bg-zinc-800/30 border border-zinc-800 hover:border-zinc-700 transition-colors">
-      <dt className="font-mono text-[10px] text-zinc-600 tracking-wider mb-1">{label}</dt>
-      <dd className="font-mono text-sm text-zinc-300 truncate" title={value}>{value}</dd>
+    <div className="group p-3 bg-zinc-800/30 border border-zinc-800 hover:border-zinc-700 transition-all duration-200">
+      <dt className="font-mono text-[10px] text-zinc-600 tracking-wider mb-1 group-hover:text-zinc-500 transition-colors">{label}</dt>
+      <dd className="font-mono text-sm text-zinc-300 truncate group-hover:text-zinc-200 transition-colors" title={value}>{value}</dd>
     </div>
   );
 }
