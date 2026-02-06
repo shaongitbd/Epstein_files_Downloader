@@ -2,6 +2,7 @@
 DOJ Epstein Files Downloader - Robust Version
 Downloads EFTA00000001.pdf through EFTA02731783.pdf
 Features:
+- Automatic cookie harvesting via headless browser (patchright/playwright)
 - Async parallel downloads
 - Automatic retries with exponential backoff
 - Rate limiting to avoid blocks
@@ -52,6 +53,9 @@ REQUESTS_PER_SECOND = 20  # Target requests per second
 # Proxy configuration
 PROXY_FILE = "proxies.txt"
 PROXY_CHUNK_SIZE = 50  # Number of proxies to use per rotation
+
+# Cookie harvesting
+COOKIE_HARVEST_URL = "https://www.justice.gov/epstein/doj-disclosures"
 
 # Load cookies from environment variables
 COOKIES = {
@@ -130,6 +134,84 @@ class ProxyPool:
             proxy = chunk[self._counter % len(chunk)]
             self._counter += 1
             return proxy
+
+
+async def harvest_cookies_with_browser(headless: bool = True) -> dict[str, str]:
+    """Launch a browser to automatically obtain DOJ cookies (Akamai + Queue-IT).
+
+    Tries patchright first (better anti-detection), falls back to playwright.
+    Returns a dict of cookie name -> value.
+    """
+    async_pw = None
+    pw_name = None
+
+    try:
+        from patchright.async_api import async_playwright as _pw
+        async_pw = _pw
+        pw_name = "patchright"
+    except ImportError:
+        try:
+            from playwright.async_api import async_playwright as _pw
+            async_pw = _pw
+            pw_name = "playwright"
+        except ImportError:
+            logger.error(
+                "Neither patchright nor playwright is installed.\n"
+                "Install one of:\n"
+                "  pip install patchright && patchright install chromium  (recommended)\n"
+                "  pip install playwright && playwright install chromium"
+            )
+            return {}
+
+    logger.info(f"Harvesting cookies with {pw_name} (headless={headless})...")
+
+    async with async_pw() as p:
+        browser = await p.chromium.launch(headless=headless)
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        try:
+            logger.info(f"Navigating to {COOKIE_HARVEST_URL}...")
+            await page.goto(COOKIE_HARVEST_URL, wait_until="networkidle", timeout=60000)
+
+            # Check for Queue-IT virtual waiting room redirect
+            if "queue-it" in page.url.lower() or "queue.it" in page.url.lower():
+                logger.info("In Queue-IT waiting room, waiting to pass through (up to 5 min)...")
+                await page.wait_for_url("**/justice.gov/**", timeout=300000)
+                logger.info("Passed through Queue-IT")
+
+            # Wait for Akamai sensor JS to finish executing
+            await page.wait_for_timeout(5000)
+
+            # Extract all cookies for the domain
+            cookies = await context.cookies()
+            cookie_dict = {c["name"]: c["value"] for c in cookies}
+
+            # Report what we found
+            important = ["ak_bmsc", "_abck", "bm_sv"]
+            # Also check for any QueueIT cookie
+            queue_it_cookies = [n for n in cookie_dict if n.startswith("QueueITAccepted")]
+            found = 0
+            for name in important:
+                if name in cookie_dict:
+                    logger.info(f"  Got: {name} ({len(cookie_dict[name])} chars)")
+                    found += 1
+            for name in queue_it_cookies:
+                logger.info(f"  Got: {name} ({len(cookie_dict[name])} chars)")
+                found += 1
+
+            if found == 0:
+                logger.warning("No relevant cookies found - site protection may have changed")
+            else:
+                logger.info(f"Harvested {found} relevant cookies")
+
+            return cookie_dict
+
+        except Exception as e:
+            logger.error(f"Cookie harvest failed: {e}")
+            return {}
+        finally:
+            await browser.close()
 
 
 class RateLimiter:
@@ -363,23 +445,37 @@ async def download_batch(
 
 
 def validate_cookies():
-    """Validate that required cookies are loaded from .env"""
+    """Validate that required cookies are present (from browser or .env)"""
     missing = []
     if not COOKIES.get("ak_bmsc"):
-        missing.append("DOJ_COOKIE_AK_BMSC")
-    if not COOKIES.get("QueueITAccepted-SDFrts345E-V3_usdojfiles"):
-        missing.append("DOJ_COOKIE_QUEUE_IT")
+        missing.append("ak_bmsc")
+    # Check for any QueueIT cookie
+    has_queue_it = any(k.startswith("QueueITAccepted") for k in COOKIES if COOKIES[k])
+    if not has_queue_it:
+        missing.append("QueueITAccepted-*")
 
     if missing:
-        logger.error("Missing required cookies in .env file:")
+        logger.error("Missing required cookies:")
         for cookie in missing:
             logger.error(f"  - {cookie}")
-        logger.error("Please add these to your .env file and try again.")
+        logger.error("Try: --show-browser to debug, or set DOJ_COOKIE_AK_BMSC / DOJ_COOKIE_QUEUE_IT in .env")
         return False
     return True
 
 
-async def main(start_num: int, end_num: int, dataset: str, proxy_chunk_size: int):
+async def main(start_num: int, end_num: int, dataset: str, proxy_chunk_size: int,
+               use_browser: bool = True, headless: bool = True):
+    global COOKIES
+
+    # Try to harvest cookies with headless browser
+    if use_browser:
+        browser_cookies = await harvest_cookies_with_browser(headless=headless)
+        if browser_cookies:
+            COOKIES.update(browser_cookies)
+            logger.info("Using browser-harvested cookies")
+        else:
+            logger.warning("Browser cookie harvest failed, falling back to .env cookies")
+
     # Validate cookies before starting
     if not validate_cookies():
         return
@@ -486,8 +582,10 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python download_epstein_files.py                     # Download all from DataSet 1
+  python download_epstein_files.py                     # Auto-harvest cookies + download
   python download_epstein_files.py -s 3159 -e 4000    # Download range 3159-4000
+  python download_epstein_files.py --show-browser      # See browser during cookie harvest
+  python download_epstein_files.py --no-browser        # Use .env cookies only (manual)
   python download_epstein_files.py -d "files/DataSet%202/"  # Use different dataset
   python download_epstein_files.py --proxy-chunk 100   # Use 100 proxies per rotation
         """
@@ -500,6 +598,10 @@ Examples:
                         help="Dataset path (default: files/DataSet%%201/)")
     parser.add_argument("--proxy-chunk", type=int, default=PROXY_CHUNK_SIZE,
                         help=f"Number of proxies per rotation chunk (default: {PROXY_CHUNK_SIZE})")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="Skip automatic browser cookie harvest, use .env cookies only")
+    parser.add_argument("--show-browser", action="store_true",
+                        help="Show browser window during cookie harvest (for debugging)")
 
     args = parser.parse_args()
 
@@ -510,7 +612,11 @@ Examples:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     try:
-        asyncio.run(main(args.start, args.end, args.dataset, args.proxy_chunk))
+        asyncio.run(main(
+            args.start, args.end, args.dataset, args.proxy_chunk,
+            use_browser=not args.no_browser,
+            headless=not args.show_browser
+        ))
     except KeyboardInterrupt:
         logger.info("\nDownload interrupted by user. Progress saved to checkpoint.")
         logger.info("Run the script again to resume.")
