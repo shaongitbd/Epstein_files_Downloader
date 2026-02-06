@@ -177,6 +177,46 @@ DOJ_COOKIE_QUEUE_IT=your_queue_cookie
 - Range support (`-s`, `-e`, `-d` flags)
 - Retry with exponential backoff
 - Resume capability
+- Proxy rotation support
+
+#### Proxy Support
+
+To avoid getting blocked, the downloader supports rotating proxies loaded from `proxies.txt`.
+
+**Setup:** Create a `proxies.txt` file in the project root (one proxy per line):
+
+```
+http://user:pass@191.101.41.41:6113
+http://user:pass@192.168.1.50:8080
+http://user:pass@10.0.0.1:3128
+# lines starting with # are skipped
+```
+
+**How it works:**
+- Proxies are split into chunks (default 50)
+- Each download batch rotates to a fresh chunk of proxies
+- Within a chunk, 30 concurrent downloads round-robin across the 50 proxies
+- On retries, a different proxy from the chunk is used
+- If `proxies.txt` doesn't exist, downloads proceed directly without proxies
+
+**Usage:**
+
+```bash
+# Uses proxies.txt with default chunk size of 50
+python download_epstein_files.py -s 1 -e 1000
+
+# Custom proxy chunk size (use 100 proxies per rotation)
+python download_epstein_files.py -s 1 -e 1000 --proxy-chunk 100
+```
+
+**CLI options:**
+
+```
+-s, --start         Start file number (default: 1)
+-e, --end           End file number (default: 2731783)
+-d, --dataset       Dataset path (default: files/DataSet%201/)
+    --proxy-chunk   Proxies per rotation chunk (default: 50)
+```
 
 ### upload_to_cdn.py
 - Parallel uploads to BunnyCDN

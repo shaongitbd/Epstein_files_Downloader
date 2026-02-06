@@ -7,6 +7,7 @@ Features:
 - Rate limiting to avoid blocks
 - Resume capability with checkpointing
 - Handles 429/503 errors gracefully
+- Proxy rotation from proxies.txt
 """
 
 import asyncio
@@ -48,6 +49,10 @@ MAX_BACKOFF = 60  # seconds
 RATE_LIMIT_PAUSE = 30  # seconds to pause on 429
 REQUESTS_PER_SECOND = 20  # Target requests per second
 
+# Proxy configuration
+PROXY_FILE = "proxies.txt"
+PROXY_CHUNK_SIZE = 50  # Number of proxies to use per rotation
+
 # Load cookies from environment variables
 COOKIES = {
     "ak_bmsc": os.getenv("DOJ_COOKIE_AK_BMSC", ""),
@@ -65,6 +70,66 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+class ProxyPool:
+    """Manages proxy rotation in chunks.
+
+    Loads proxies from proxies.txt, splits them into chunks of PROXY_CHUNK_SIZE,
+    and rotates through chunks. Within each chunk, proxies are assigned round-robin
+    to concurrent downloads.
+    """
+    def __init__(self, proxy_file: str = PROXY_FILE, chunk_size: int = PROXY_CHUNK_SIZE):
+        self.all_proxies: list[str] = []
+        self.chunk_size = chunk_size
+        self.current_chunk_index = 0
+        self._counter = 0
+        self._lock = asyncio.Lock()
+
+        if Path(proxy_file).exists():
+            with open(proxy_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        self.all_proxies.append(line)
+
+        if self.all_proxies:
+            # Shuffle to avoid all workers hitting same proxy order
+            random.shuffle(self.all_proxies)
+            self.num_chunks = (len(self.all_proxies) + chunk_size - 1) // chunk_size
+            logger.info(f"Loaded {len(self.all_proxies)} proxies in {self.num_chunks} chunks of ~{chunk_size}")
+        else:
+            self.num_chunks = 0
+            logger.info("No proxies loaded — downloading directly without proxies")
+
+    @property
+    def has_proxies(self) -> bool:
+        return len(self.all_proxies) > 0
+
+    def _get_current_chunk(self) -> list[str]:
+        """Get the current chunk of proxies."""
+        start = self.current_chunk_index * self.chunk_size
+        end = start + self.chunk_size
+        return self.all_proxies[start:end]
+
+    def advance_chunk(self):
+        """Move to the next chunk of proxies. Wraps around."""
+        if not self.has_proxies:
+            return
+        self.current_chunk_index = (self.current_chunk_index + 1) % self.num_chunks
+        self._counter = 0
+        chunk = self._get_current_chunk()
+        logger.info(f"Rotated to proxy chunk {self.current_chunk_index + 1}/{self.num_chunks} ({len(chunk)} proxies)")
+
+    async def get_proxy(self) -> str | None:
+        """Get the next proxy from the current chunk (round-robin). Thread-safe."""
+        if not self.has_proxies:
+            return None
+        async with self._lock:
+            chunk = self._get_current_chunk()
+            proxy = chunk[self._counter % len(chunk)]
+            self._counter += 1
+            return proxy
 
 
 class RateLimiter:
@@ -179,7 +244,8 @@ async def download_file_with_retry(
     rate_limiter: RateLimiter,
     stats: DownloadStats,
     pbar: tqdm,
-    dataset: str
+    dataset: str,
+    proxy_pool: ProxyPool
 ) -> tuple[int, str, str]:
     """Download a single file with retries and exponential backoff"""
 
@@ -191,8 +257,13 @@ async def download_file_with_retry(
         backoff = INITIAL_BACKOFF
 
         for attempt in range(MAX_RETRIES):
+            proxy = await proxy_pool.get_proxy()
             try:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                async with session.get(
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=60),
+                    proxy=proxy
+                ) as response:
                     if response.status == 200:
                         content = await response.read()
                         async with aiofiles.open(filepath, 'wb') as f:
@@ -260,7 +331,8 @@ async def download_batch(
     nums: list[int],
     stats: DownloadStats,
     pbar: tqdm,
-    dataset: str
+    dataset: str,
+    proxy_pool: ProxyPool
 ) -> list[tuple[int, str, str]]:
     """Download a batch of files"""
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
@@ -275,7 +347,7 @@ async def download_batch(
 
     async with aiohttp.ClientSession(connector=connector, cookies=COOKIES) as session:
         tasks = [
-            download_file_with_retry(session, num, semaphore, rate_limiter, stats, pbar, dataset)
+            download_file_with_retry(session, num, semaphore, rate_limiter, stats, pbar, dataset, proxy_pool)
             for num in nums
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -307,13 +379,16 @@ def validate_cookies():
     return True
 
 
-async def main(start_num: int, end_num: int, dataset: str):
+async def main(start_num: int, end_num: int, dataset: str, proxy_chunk_size: int):
     # Validate cookies before starting
     if not validate_cookies():
         return
 
     # Create output directory
     OUTPUT_DIR.mkdir(exist_ok=True)
+
+    # Initialize proxy pool
+    proxy_pool = ProxyPool(PROXY_FILE, proxy_chunk_size)
 
     # Load checkpoint
     checkpoint = load_checkpoint()
@@ -341,6 +416,7 @@ async def main(start_num: int, end_num: int, dataset: str):
     logger.info(f"Files to download: {total:,}")
     logger.info(f"Concurrent connections: {MAX_CONCURRENT}")
     logger.info(f"Rate limit: {REQUESTS_PER_SECOND} req/sec")
+    logger.info(f"Proxies: {len(proxy_pool.all_proxies)} loaded, chunk size {proxy_chunk_size}")
     logger.info(f"Output directory: {OUTPUT_DIR.absolute()}")
     logger.info(f"=" * 60)
 
@@ -354,7 +430,12 @@ async def main(start_num: int, end_num: int, dataset: str):
     with tqdm(total=total, desc="Downloading", unit="file", dynamic_ncols=True) as pbar:
         for i in range(0, total, batch_size):
             batch = to_download[i:i + batch_size]
-            results = await download_batch(batch, stats, pbar, dataset)
+
+            # Rotate to next proxy chunk for each batch
+            if proxy_pool.has_proxies:
+                proxy_pool.advance_chunk()
+
+            results = await download_batch(batch, stats, pbar, dataset, proxy_pool)
 
             # Process results
             for num, status, msg in results:
@@ -408,7 +489,7 @@ Examples:
   python download_epstein_files.py                     # Download all from DataSet 1
   python download_epstein_files.py -s 3159 -e 4000    # Download range 3159-4000
   python download_epstein_files.py -d "files/DataSet%202/"  # Use different dataset
-  python download_epstein_files.py -d "files/DataSet%202/" -s 1 -e 1000  # Dataset 2, range 1-1000
+  python download_epstein_files.py --proxy-chunk 100   # Use 100 proxies per rotation
         """
     )
     parser.add_argument("-s", "--start", type=int, default=DEFAULT_START,
@@ -417,6 +498,8 @@ Examples:
                         help=f"End file number (default: {DEFAULT_END})")
     parser.add_argument("-d", "--dataset", type=str, default=DEFAULT_DATASET,
                         help="Dataset path (default: files/DataSet%%201/)")
+    parser.add_argument("--proxy-chunk", type=int, default=PROXY_CHUNK_SIZE,
+                        help=f"Number of proxies per rotation chunk (default: {PROXY_CHUNK_SIZE})")
 
     args = parser.parse_args()
 
@@ -427,7 +510,7 @@ Examples:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     try:
-        asyncio.run(main(args.start, args.end, args.dataset))
+        asyncio.run(main(args.start, args.end, args.dataset, args.proxy_chunk))
     except KeyboardInterrupt:
         logger.info("\nDownload interrupted by user. Progress saved to checkpoint.")
         logger.info("Run the script again to resume.")
