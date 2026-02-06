@@ -399,13 +399,13 @@ async def download_file_with_retry(
 
             except asyncio.TimeoutError:
                 await stats.record_retry()
-                logger.debug(f"Timeout on {num}, attempt {attempt + 1}")
+                logger.warning(f"Timeout on {num}, attempt {attempt + 1}/{MAX_RETRIES}")
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, MAX_BACKOFF)
 
             except aiohttp.ClientError as e:
                 await stats.record_retry()
-                logger.debug(f"Connection error on {num}: {e}")
+                logger.warning(f"Connection error on {num}, attempt {attempt + 1}/{MAX_RETRIES}: {e}")
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, MAX_BACKOFF)
 
@@ -439,7 +439,20 @@ async def download_batch(
         enable_cleanup_closed=True
     )
 
-    async with aiohttp.ClientSession(connector=connector, cookies=COOKIES) as session:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.justice.gov/epstein/doj-disclosures",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+    }
+
+    async with aiohttp.ClientSession(connector=connector, cookies=COOKIES, headers=headers) as session:
         tasks = [
             download_file_with_retry(session, num, semaphore, rate_limiter, stats, pbar, dataset, proxy_pool)
             for num in nums
